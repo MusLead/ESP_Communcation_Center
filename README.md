@@ -46,3 +46,17 @@ This communication center is part of a larger IoT ecosystem:
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details
+
+
+# Reference
+
+HTTPS_SERVER: [text](https://randomnerdtutorials.com/esp32-esp8266-https-ssl-tls/) ; [text](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_https_server.html)
+
+- Mosquitto component : [espressif](https://components.espressif.com/components/espressif/mosquitto/versions/2.0.20~4/readme)
+
+- Http_server: [espressif](https://developer.espressif.com/blog/2025/06/basic_http_server/)
+
+- Mqtt :
+  - [espressif](https://docs.espressif.com/projects/esp-idf/en/v4.3.3/esp32/api-reference/protocols/mqtt.html)
+  - [Medium -- introduction to mqtt](https://medium.com/@vaishalinagori112/introduction-to-mqtt-and-setting-up-a-lab-for-mqtt-pentesting-on-macos-f6018183c2b7)
+  - [developer -- espressif](https://developer.espressif.com/blog/2025/05/esp-idf-mosquitto-port/)
