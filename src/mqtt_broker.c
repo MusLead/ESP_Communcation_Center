@@ -1,59 +1,106 @@
 #include "mqtt_broker.h"
 #include "mosq_broker.h"
 #include "esp_log.h"
+#include "system_state.h"
 
 static const char *TAG = "MQTT_BROKER";
 
-// Added the required CAs for the mqtt_broker
-// Required CAs:
-// server.crt
-// server.key
-// ca.crt
-extern const uint8_t _binary_server_crt_start[] asm("_binary_server_crt_start");
-extern const uint8_t _binary_server_crt_end[] asm("_binary_server_crt_end");
-
-extern const uint8_t _binary_server_key_start[] asm("_binary_server_key_start");
-extern const uint8_t _binary_server_key_end[] asm("_binary_server_key_end");
-
-extern const uint8_t _binary_ca_crt_start[] asm("_binary_ca_crt_start");
-extern const uint8_t _binary_ca_crt_end[] asm("_binary_ca_crt_end");
-
-// Define the variable here
-char latest_temp[32] = "0";
-char latest_light[2] = "0";
-
+// MQTT message callback function
 void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, int retain)
 {
-    if (strcmp(topic, "ESP32/values") == 0)
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) != pdTRUE)
+        return;
+
+    char payload[32]; // save messages here
+    int copy_len = len < sizeof(payload) - 1 ? len : sizeof(payload) - 1;
+    memcpy(payload, data, copy_len);
+    payload[copy_len] = '\0';
+
+    // Indoor Sensor
+    if (strcmp(topic, "ESP32/indoor") == 0)
     {
-        // Copy the message into our global variable
-        int copy_len = len < sizeof(latest_temp) - 1 ? len : sizeof(latest_temp) - 1;
-        memcpy(latest_temp, data, copy_len);
-        latest_temp[copy_len] = '\0';
+        char *p;
+        if ((p = strstr(payload, "Temp:")) != NULL)
+        {
+            indoor_temp = atof(p + 5);
+        }
+        if ((p = strstr(payload, "H=")) != NULL)
+        {
+
+            indoor_humidity = atof(p + 2);
+        }
+        if ((p = strstr(payload, "AQ:")) != NULL)
+        {
+            indoor_aq = atoi(p + 3);
+        }
     }
-    else if (strcmp(topic, "v2/light/values") == 0)
+    // Outdoor Sensor
+    else if (strcmp(topic, "ESP32/outdoor") == 0)
     {
-        int copy_len = len < sizeof(latest_light) - 1 ? len : sizeof(latest_light) - 1;
-        memcpy(latest_light, data, copy_len);
-        latest_light[copy_len] = '\0';
+        char *p;
+        if ((p = strstr(payload, "Temp:")) != NULL)
+        {
+            outdoor_temp = atof(p + 5);
+        }
+        if ((p = strstr(payload, "H=")) != NULL)
+        {
+            outdoor_humidity = atof(p + 2);
+        }
+        if ((p = strstr(payload, "AQ:")) != NULL)
+        {
+            outdoor_aq = atoi(p + 3);
+        }
     }
+    // Fan
+    else if (strcmp(topic, "ESP32/fan") == 0)
+    {
+        fan = atoi(payload);
+        if (fan != 0)
+        {
+            fan = 1;
+        }
+    }
+
+    // Window
+    else if (strcmp(topic, "ESP32/window") == 0)
+    {
+        window = atoi(payload) ? 1 : 0;
+    }
+    // Door
+    else if (strcmp(topic, "ESP32/door") == 0)
+    {
+        door = atoi(payload);
+    }
+    // Wind Speed
+    else if (strcmp(topic, "ESP32/wind") == 0)
+    {
+        wind_speed = atof(payload);
+    }
+
+    xSemaphoreGive(state_mutex);
+}
+
+// MQTT authentication callback function
+int mqtt_auth_cb(const char *client_id, const char *username, const char *password, int password_len)
+{
+    ESP_LOGI("MQTT_AUTH", "MQTT connect attempt: client_id=%s user=%s", client_id, username);
+
+    // simple auth: user=esp32 , pass=1234
+    if (username && strcmp(username, "esp32") == 0 &&
+        password && strncmp(password, "1234", password_len) == 0)
+    {
+        return 0; // accept
+    }
+    return 1; // reject
 }
 
 void mqtt_broker_start(void *pvParameters)
 {
-    esp_tls_cfg_server_t tls_cfg = {
-        .cacert_buf = _binary_ca_crt_start,
-        .cacert_bytes = _binary_ca_crt_end - _binary_ca_crt_start,
-        .servercert_buf = _binary_server_crt_start,
-        .servercert_bytes = _binary_server_crt_end - _binary_server_crt_start,
-        .serverkey_buf = _binary_server_key_start,
-        .serverkey_bytes = _binary_server_key_end - _binary_server_key_start,
-    };
 
     struct mosq_broker_config config = {
         .host = "0.0.0.0",
-        .port = 8883,
-        .tls_cfg = &tls_cfg,
+        .port = 1883,
+        .handle_connect_cb = mqtt_auth_cb,
         .handle_message_cb = mqtt_message_cb // <-- set callback
     };
 
