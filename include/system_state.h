@@ -37,10 +37,10 @@ extern schedule_period_t schedule[MAX_PERIODS];
 extern int schedule_count;
 
 // actuators
-extern int window;
-extern int door;
-extern int fan;
-extern bool absorber_used;
+extern bool window;        // false = closed, true = open
+extern bool door;          // false = closed, true = open
+extern bool fan;           // false = off, true = on
+extern bool absorber_used; // false = off, true = on
 
 // mode
 extern system_mode_t current_mode;

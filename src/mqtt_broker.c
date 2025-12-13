@@ -54,22 +54,23 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
     // Fan
     else if (strcmp(topic, "ESP32/fan") == 0)
     {
-        fan = atoi(payload);
-        if (fan != 0)
-        {
-            fan = 1;
-        }
+        fan = (atoi(payload) == 1);
     }
 
     // Window
     else if (strcmp(topic, "ESP32/window") == 0)
     {
-        window = atoi(payload) ? 1 : 0;
+        window = (atoi(payload) == 1);
     }
     // Door
     else if (strcmp(topic, "ESP32/door") == 0)
     {
-        door = atoi(payload);
+        door = (atoi(payload) == 1);
+    }
+    // Absorber
+    else if (strcmp(topic, "ESP32/absorber") == 0)
+    {
+        absorber_used = (atoi(payload) == 1);
     }
     // Wind Speed
     else if (strcmp(topic, "ESP32/wind") == 0)

@@ -3,6 +3,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include <string.h>
+#include "stdbool.h"
 #include "mqtt_broker.h"
 #include "system_state.h"
 
@@ -45,9 +46,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"mode\":%d,"
              "\"window\":%d,"
              "\"fan\":%d,"
-             "\"absorber\":%s"
+             "\"door\":%d,"
+             "\"absorber\":%d"
              "}",
-             current_mode, window, fan, absorber_used ? "true" : "false");
+             current_mode, window, fan, door, absorber_used);
 
     xSemaphoreGive(state_mutex);
 
@@ -135,30 +137,32 @@ static esp_err_t actuators_post_handler(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "only MANUAL allowed"), ESP_FAIL;
     }
 
-    int new_window, new_fan, new_absorber;
-    if (sscanf(buf, "{\"window\":%d,\"fan\":%d,\"absorber\":%d}",
-               &new_window, &new_fan, &new_absorber) != 3)
+    int new_window, new_fan, new_absorber, new_door;
+
+    if (sscanf(buf,
+               "{\"window\":%d,\"fan\":%d,\"door\":%d,\"absorber\":%d}",
+               &new_window, &new_fan, &new_door, &new_absorber) != 4)
     {
         xSemaphoreGive(state_mutex);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid body"), ESP_FAIL;
     }
 
-    if (new_window < 0 || new_window > 1 ||
-        new_fan < 0 || new_fan > 1 ||
-        new_absorber < 0 || new_absorber > 1 ||
-        (new_fan == 1 && new_window == 0))
+    // Business rule: fan needs window open
+    if (new_fan && !new_window)
     {
-
         xSemaphoreGive(state_mutex);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid actuator values"), ESP_FAIL;
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "fan requires window open"),
+               ESP_FAIL;
     }
 
+    // Apply state
     window = new_window;
     fan = new_fan;
-    absorber_used = new_absorber ? true : false;
+    absorber_used = new_absorber;
+    door = new_door;
 
     xSemaphoreGive(state_mutex);
-
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
 }

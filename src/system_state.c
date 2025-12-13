@@ -4,11 +4,11 @@ schedule_period_t schedule[MAX_PERIODS];
 int schedule_count = 1;
 
 // MQTT needed data
-int window = 0;
-int door = 0;
-int fan = 0;
-system_mode_t current_mode = MODE_AUTO_BEST;
+bool window = false;
+bool door = false;
+bool fan = false;
 bool absorber_used = false;
+system_mode_t current_mode = MODE_AUTO_BEST;
 
 // indoor
 float indoor_humidity = 0.0;
@@ -47,24 +47,12 @@ void system_auto_update()
     {
 
         // Windowlogik
-        if (indoor_humidity - outdoor_humidity > HUMIDITY_DIFF_THRESHOLD && outdoor_aq <= GOOD_AQ) // strcmp(outdoor_aq_level,"good")==0
-        {
-            window = 1;
-        }
-        else
-        {
-            window = 0;
-        }
+        window = (indoor_humidity - outdoor_humidity > HUMIDITY_DIFF_THRESHOLD &&
+                  outdoor_aq <= GOOD_AQ); // strcmp(outdoor_aq_level,"good")==0
 
         // Fanlogik
-        if (window == 1 && indoor_aq > GOOD_AQ)
-        {
-            fan = 1;
-        }
-        else
-        {
-            fan = 0;
-        }
+        fan = (window && indoor_aq > GOOD_AQ);
+
         // Absorberlogik
         absorber_used = (indoor_humidity > HIGH_HUMIDITY);
     }
@@ -76,11 +64,11 @@ void system_auto_update()
         // window: open if outdoor AQ is good
         if (outdoor_aq <= GOOD_AQ)
         {
-            window = 1;
+            window = true;
 
             if (wind_speed > WIND_HIGH)
             {
-                fan = 0;
+                fan = false;
             }
             else
             {
@@ -90,8 +78,8 @@ void system_auto_update()
         else
         {
             // bad outdoor AQ -> close window and turn off fan
-            window = 0;
-            fan = 0;
+            window = false;
+            fan = false;
         }
 
         absorber_used = (indoor_humidity > HIGH_HUMIDITY);
@@ -99,11 +87,13 @@ void system_auto_update()
 
     // ---------------- Ventilation Safety ----------------
     // Fan cannot be on if window is closed
-    if (fan == 1 && window == 0)
-        fan = 0;
+    if (fan && !window)
+    {
+        fan = false;
+    }
 
     // ---------------- Door ----------------
-    door = (wind_speed > WIND_HIGH) ? 1 : 0;
+    door = (wind_speed > WIND_HIGH);
 
     xSemaphoreGive(state_mutex);
 }
