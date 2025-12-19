@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -25,16 +27,16 @@ typedef enum
 
 typedef struct
 {
-    char start[6]; // "HH:MM"
-    char end[6];
+    char start[7]; // "HH:MM"
+    char end[7];
     system_mode_t mode;
 } schedule_period_t;
 
 /* -------------------- GLOBAL STATE -------------------- */
 
 // schedule
-extern schedule_period_t schedule[MAX_PERIODS];
-extern int schedule_count;
+extern schedule_period_t schedule[MAX_PERIODS]; // MAYBE MAKE A NODE LIST   -> [] -> [] -> Null
+extern uint8_t schedule_count;
 
 // actuators
 extern bool window;        // false = closed, true = open
@@ -48,12 +50,12 @@ extern system_mode_t current_mode;
 // indoor sensors
 extern float indoor_humidity;
 extern float indoor_temp;
-extern unsigned int indoor_aq;
+extern uint8_t indoor_aq;
 
 // outdoor sensors
 extern float outdoor_humidity;
 extern float outdoor_temp;
-extern unsigned int outdoor_aq;
+extern uint8_t outdoor_aq;
 
 extern float wind_speed;
 

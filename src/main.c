@@ -8,10 +8,12 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
+#include "sntp_time.h"
 #include "wifi.h"
 #include "http_server.h"
 #include "mqtt_broker.h"
 #include "system_state.h"
+#include "mqtt_pub_sub.h"
 
 void app_main(void)
 {
@@ -28,6 +30,12 @@ void app_main(void)
     connect_wifi();
 
     // Start the system state module to manage modes and actuators
+    init_time();
+
+    // Start MQTT PUBLISH / SUBSCRIBE
+    mqtt_pubsub_start();
+
+    // Start the system state module to manage modes and actuators
     system_state_init();
 
     // Start MQTT BROKER --> CORE 0
@@ -37,6 +45,6 @@ void app_main(void)
     xTaskCreatePinnedToCore(http_server_start, "HTTP SERVER TASK - CORE 1", 4096, NULL, 1, NULL, 1);
 
     // Start the system state task for mode communication
-    xTaskCreate(system_task, "SHVS_TASK", 2046, NULL, 5, NULL);
+    xTaskCreate(system_task, "SHVS_TASK", 4096, NULL, 5, NULL);
 }
 // ----

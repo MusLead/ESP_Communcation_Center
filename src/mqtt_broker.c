@@ -1,18 +1,18 @@
+#include <string.h>
 #include "mqtt_broker.h"
 #include "mosq_broker.h"
-#include "esp_log.h"
 #include "system_state.h"
 
-static const char *TAG = "MQTT_BROKER";
+// static const char *TAG = "MQTT_BROKER";
 
 // MQTT message callback function
 void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, int retain)
 {
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) != pdTRUE)
+    if (xSemaphoreTake(state_mutex, portMAX_DELAY) != pdTRUE)
         return;
 
     char payload[32]; // save messages here
-    int copy_len = len < sizeof(payload) - 1 ? len : sizeof(payload) - 1;
+    uint8_t copy_len = (uint8_t)len < sizeof(payload) - 1 ? len : sizeof(payload) - 1;
     memcpy(payload, data, copy_len);
     payload[copy_len] = '\0';
 
@@ -51,27 +51,6 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
             outdoor_aq = atoi(p + 3);
         }
     }
-    // Fan
-    else if (strcmp(topic, "ESP32/fan") == 0)
-    {
-        fan = (atoi(payload) == 1);
-    }
-
-    // Window
-    else if (strcmp(topic, "ESP32/window") == 0)
-    {
-        window = (atoi(payload) == 1);
-    }
-    // Door
-    else if (strcmp(topic, "ESP32/door") == 0)
-    {
-        door = (atoi(payload) == 1);
-    }
-    // Absorber
-    else if (strcmp(topic, "ESP32/absorber") == 0)
-    {
-        absorber_used = (atoi(payload) == 1);
-    }
     // Wind Speed
     else if (strcmp(topic, "ESP32/wind") == 0)
     {
@@ -84,7 +63,7 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
 // MQTT authentication callback function
 int mqtt_auth_cb(const char *client_id, const char *username, const char *password, int password_len)
 {
-    ESP_LOGI("MQTT_AUTH", "MQTT connect attempt: client_id=%s user=%s", client_id, username);
+    // ESP_LOGI("MQTT_AUTH", "MQTT connect attempt: client_id=%s user=%s", client_id, username);
 
     // simple auth: user=esp32 , pass=1234
     if (username && strcmp(username, "esp32") == 0 &&
@@ -105,7 +84,7 @@ void mqtt_broker_start(void *pvParameters)
         .handle_message_cb = mqtt_message_cb // <-- set callback
     };
 
-    ESP_LOGI(TAG, "Starting MQTT Broker on port %d", config.port);
+    // ESP_LOGI(TAG, "Starting MQTT Broker on port %d", config.port);
 
     mosq_broker_run(&config); // blocking
     mosq_broker_stop();
