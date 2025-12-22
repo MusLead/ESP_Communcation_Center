@@ -8,13 +8,16 @@
 // MQTT message callback function
 void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, int retain)
 {
-    if (xSemaphoreTake(state_mutex, portMAX_DELAY) != pdTRUE)
-        return;
-
     char payload[32]; // save messages here
     uint8_t copy_len = (uint8_t)len < sizeof(payload) - 1 ? len : sizeof(payload) - 1;
     memcpy(payload, data, copy_len);
     payload[copy_len] = '\0';
+
+    // Values to be passed to global state
+    float in_t = 0, in_h = 0;
+    float out_t = 0, out_h = 0;
+    uint8_t in_aq = 0;
+    uint8_t out_aq = 0;
 
     // Indoor Sensor
     if (strcmp(topic, "ESP32/indoor") == 0)
@@ -22,17 +25,21 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
         char *p;
         if ((p = strstr(payload, "Temp:")) != NULL)
         {
-            indoor_temp = atof(p + 5);
+            in_t = atof(p + 5);
         }
         if ((p = strstr(payload, "H=")) != NULL)
         {
-
-            indoor_humidity = atof(p + 2);
+            in_h = atof(p + 2);
         }
         if ((p = strstr(payload, "AQ:")) != NULL)
         {
-            indoor_aq = atoi(p + 3);
+            in_aq = atoi(p + 3);
         }
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
+        indoor_temp = in_t;
+        indoor_humidity = in_h;
+        indoor_aq = in_aq;
+        xSemaphoreGive(state_mutex);
     }
     // Outdoor Sensor
     else if (strcmp(topic, "ESP32/outdoor") == 0)
@@ -40,24 +47,29 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
         char *p;
         if ((p = strstr(payload, "Temp:")) != NULL)
         {
-            outdoor_temp = atof(p + 5);
+            out_t = atof(p + 5);
         }
         if ((p = strstr(payload, "H=")) != NULL)
         {
-            outdoor_humidity = atof(p + 2);
+            out_h = atof(p + 2);
         }
         if ((p = strstr(payload, "AQ:")) != NULL)
         {
-            outdoor_aq = atoi(p + 3);
+            out_aq = atoi(p + 3);
         }
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
+        outdoor_temp = out_t;
+        outdoor_humidity = out_h;
+        outdoor_aq = out_aq;
+        xSemaphoreGive(state_mutex);
     }
     // Wind Speed
     else if (strcmp(topic, "ESP32/wind") == 0)
     {
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
         wind_speed = atof(payload);
+        xSemaphoreGive(state_mutex);
     }
-
-    xSemaphoreGive(state_mutex);
 }
 
 // MQTT authentication callback function

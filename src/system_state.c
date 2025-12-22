@@ -2,9 +2,7 @@
 #include <time.h>
 #include <string.h>
 #include "sntp_time.h"
-
-static bool schedule_is_active(system_mode_t *out_mode);
-static void apply_auto_logic(system_mode_t mode);
+#include "mqtt_pub_sub.h"
 
 schedule_period_t schedule[MAX_PERIODS];
 uint8_t schedule_count = 0;
@@ -14,6 +12,12 @@ bool window = false;
 bool door = false;
 bool fan = false;
 bool absorber_used = false;
+
+// last states for change detection
+static bool last_window = false;
+static bool last_fan = false;
+static bool last_door = false;
+static bool last_absorber = false;
 
 // mode
 system_mode_t current_mode = MODE_MANUAL;
@@ -41,54 +45,24 @@ void system_state_init()
     }
 }
 
-void system_auto_update()
+void publish_state(bool w, bool f, bool d, bool a)
 {
-    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    if (w != last_window)
+        mqtt_publish("ESP32/window", w ? "1" : "0", 1);
 
-    // -------- MANUAL --------
-    if (current_mode == MODE_MANUAL)
-    {
-        xSemaphoreGive(state_mutex);
-        return;
-    }
+    if (f != last_fan)
+        mqtt_publish("ESP32/fan", f ? "1" : "0", 1);
 
-    // -------- SCHEDULE --------
-    system_mode_t scheduled_mode = current_mode;
+    if (d != last_door)
+        mqtt_publish("ESP32/door", d ? "1" : "0", 1);
 
-    if (schedule_count > 0)
-    {
-        if (!schedule_is_active(&scheduled_mode))
-        {
-            // outside schedule → everything off
-            window = false;
-            fan = false;
-            absorber_used = false;
-            door = false;
+    if (a != last_absorber)
+        mqtt_publish("ESP32/absorber", a ? "1" : "0", 1);
 
-            xSemaphoreGive(state_mutex);
-            return;
-        }
-        // Fixed: Apply scheduled mode
-        current_mode = scheduled_mode;
-
-        // apply_auto_logic(scheduled_mode);
-        // instead of
-        // current_mode = scheduled_mode;
-    }
-
-    // -------- AUTO LOGIC --------
-    apply_auto_logic(scheduled_mode);
-
-    // Fan cannot be on if window is closed
-    if (fan && !window)
-    {
-        fan = false;
-    }
-
-    // ---------------- Door ----------------
-    door = (wind_speed > WIND_HIGH);
-
-    xSemaphoreGive(state_mutex);
+    last_window = w;
+    last_fan = f;
+    last_door = d;
+    last_absorber = a;
 }
 
 uint16_t time_to_minutes(const char *t)
@@ -96,7 +70,7 @@ uint16_t time_to_minutes(const char *t)
     uint8_t hh = (t[0] - '0') * 10 + (t[1] - '0');
     uint8_t mm = (t[3] - '0') * 10 + (t[4] - '0');
 
-    return (uint16_t)(hh * 60 + mm);
+    return hh * 60 + mm;
 }
 
 static bool schedule_is_active(system_mode_t *out_mode)
@@ -165,6 +139,73 @@ static void apply_auto_logic(system_mode_t mode)
 
         absorber_used = (indoor_humidity > HIGH_HUMIDITY);
     }
+}
+
+void system_auto_update()
+{
+    bool w, f, d, a;
+    system_mode_t mode;
+
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+
+    mode = current_mode;
+
+    // -------- MANUAL --------
+    if (mode == MODE_MANUAL)
+    {
+        xSemaphoreGive(state_mutex);
+        return;
+    }
+
+    // -------- SCHEDULE --------
+
+    if (schedule_count > 0)
+    {
+        if (!schedule_is_active(&mode))
+        {
+            // outside schedule → everything off
+            window = false;
+            fan = false;
+            door = false;
+            absorber_used = false;
+
+            w = window;
+            f = fan;
+            d = door;
+            a = absorber_used;
+
+            xSemaphoreGive(state_mutex);
+            publish_state(w, f, d, a);
+            return;
+        }
+        // Fixed: Apply scheduled mode
+        current_mode = mode;
+
+        // apply_auto_logic(mode);
+        // instead of
+        // current_mode = mode;
+    }
+
+    // -------- AUTO LOGIC --------
+    apply_auto_logic(mode);
+
+    // Fan cannot be on if window is closed
+    if (fan && !window)
+    {
+        fan = false;
+    }
+
+    // ---------------- Door ----------------
+    door = (wind_speed > WIND_HIGH);
+
+    w = window;
+    f = fan;
+    d = door;
+    a = absorber_used;
+
+    xSemaphoreGive(state_mutex);
+
+    publish_state(w, f, d, a);
 }
 
 // System task

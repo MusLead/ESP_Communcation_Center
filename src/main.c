@@ -32,19 +32,19 @@ void app_main(void)
     // Start the system state module to manage modes and actuators
     init_time();
 
-    // Start MQTT PUBLISH / SUBSCRIBE
-    mqtt_pubsub_start();
-
     // Start the system state module to manage modes and actuators
     system_state_init();
 
     // Start MQTT BROKER --> CORE 0
-    xTaskCreatePinnedToCore(mqtt_broker_start, "MQTT BROKER TASK - CORE 0", 4096, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(mqtt_broker_start, "MQTT BROKER TASK - CORE 0", 8192, NULL, 1, NULL, 0);
+
+    // Start MQTT PUBLISH / SUBSCRIBE
+    mqtt_pubsub_start();
 
     // Start HTTP Server on --> CORE 1
-    xTaskCreatePinnedToCore(http_server_start, "HTTP SERVER TASK - CORE 1", 4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(http_server_start, "HTTP SERVER TASK - CORE 1", 8192, NULL, 1, NULL, 1);
 
     // Start the system state task for mode communication
-    xTaskCreate(system_task, "SHVS_TASK", 4096, NULL, 5, NULL);
+    xTaskCreate(system_task, "SHVS_TASK", 4096, NULL, 3, NULL);
 }
 // ----

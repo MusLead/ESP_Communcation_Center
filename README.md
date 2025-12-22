@@ -36,6 +36,39 @@ git add ESP_Communcation_Center
 git commit -m "Update ESP_Communcation_Center submodule"
 ```
 
+## Quick Setup
+
+### 1 Create WiFi credentials
+
+Create a file named **`secret.ini`** in the project directory folder `config\` with the following content:
+
+```
+[wifi]
+ssid = XXXX
+password = XXXX
+```
+
+> ! Replace `XXXX` with your WiFi credentials.
+
+### 2 Set MQTT Broker address
+
+Open **`mqtt_pub_sub.h`** and set the IP address of your MQTT broker:
+
+```c
+#define MQTT_ADDR_URL "mqtt://192.168.X.X"
+```
+
+### 3 Startup order
+
+! **Web server, sensors, and actuators must only be used after the following message appears in the monitor:**
+
+```
+MQTT Connected
+```
+
+Only after this message the system is fully operational.
+
+
 ## Architecture
 
 This communication center is part of a larger IoT ecosystem:

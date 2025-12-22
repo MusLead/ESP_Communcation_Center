@@ -9,8 +9,8 @@
 /* -------------------- CONFIG CONSTANTS -------------------- */
 
 #define HUMIDITY_DIFF_THRESHOLD 10.0f
-#define HIGH_HUMIDITY 70.0f
-#define GOOD_AQ 50
+#define HIGH_HUMIDITY 20.0f
+#define GOOD_AQ 20
 #define WIND_HIGH 5.0f
 #define MAX_PERIODS 8
 
@@ -64,6 +64,7 @@ extern SemaphoreHandle_t state_mutex;
 
 /* -------------------- API -------------------- */
 
+void publish_state(bool w, bool f, bool d, bool a);
 void system_state_init(void);
 void system_auto_update(void);
 void system_task(void *pvParameters);
