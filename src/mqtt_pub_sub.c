@@ -1,3 +1,4 @@
+#include "wifi.h"
 #include "mqtt_pub_sub.h"
 #include "mqtt_client.h"
 #include "esp_log.h"
@@ -18,6 +19,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI("MQTT", "Disconnected");
+        
+        esp_ip4_addr_t ip = wifi_get_ip();
+        ESP_LOGI("MQTT", "ESP32 LOCAL IP IS: " IPSTR, IP2STR(&ip));
         break;
 
     default:

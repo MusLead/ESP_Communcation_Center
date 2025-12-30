@@ -3,9 +3,15 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_event.h"
-#include "esp_netif.h"
 
 static const char *TAG = "ESP32_WIFI";
+static esp_ip4_addr_t esp_ip_addr;
+
+esp_ip4_addr_t wifi_get_ip()
+{
+    return esp_ip_addr;
+}
+
 
 // wifi event handler
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -27,7 +33,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&(event->ip_info.ip)));
+        esp_ip_addr = event->ip_info.ip; // store IP
+        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&esp_ip_addr));
     }
 }
 
