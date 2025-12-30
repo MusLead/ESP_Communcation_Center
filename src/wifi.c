@@ -43,9 +43,20 @@ void connect_wifi()
     // get ESP ready to connect to WIFI
     esp_netif_init();
     esp_event_loop_create_default();
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&cfg);
+
+    // ===== STATIC IP CONFIGURATION =====
+    esp_netif_ip_info_t ip_info;
+    ip_info.ip.addr = esp_ip4addr_aton("192.168.0.220");   // ESP32 static IP
+    ip_info.gw.addr = esp_ip4addr_aton("192.168.0.1");     // Router gateway
+    ip_info.netmask.addr = esp_ip4addr_aton("255.255.255.0");
+
+    // disable DHCP client so static IP is actually used
+    esp_netif_dhcpc_stop(netif);
+    esp_netif_set_ip_info(netif, &ip_info);
+    // ===================================
 
     // Register WiFi event handlers
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL);
