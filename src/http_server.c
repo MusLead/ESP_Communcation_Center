@@ -261,10 +261,10 @@ static esp_err_t schedule_post_handler(httpd_req_t *req)
 
         // ESP_LOGI("SCHEDULE", "Current schedule count: %d", schedule_count);
 
-        p = strchr(p + 1, '}'); // gehe zum Ende des Objekts
+        p = strchr(p + 1, '}'); // go at the end of the Objekt
         if (p)
         {
-            p++; // und weiter
+            p++;
         }
     }
 
