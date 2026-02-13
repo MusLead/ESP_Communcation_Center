@@ -1,8 +1,9 @@
 //
 // ----
-// This implemntation starts the wifi and pins two task in two cores:
+// This implemntation starts the wifi and init the local time and the system state and after that pins two task in two cores:
 // Core 0 for the mqtt_broker
 // Core 1 for the http_server
+// + starts the system state task
 #include <stdio.h>
 #include "nvs_flash.h"
 #include "esp_log.h"
@@ -17,34 +18,34 @@
 
 void app_main(void)
 {
-    // Display free heap and IDF version
-    ESP_LOGI("MAIN", "[APP] Startup..");
-    ESP_LOGI("MAIN", "[APP] Free memory: %" PRIu32 " bytes", esp_get_free_heap_size());
-    ESP_LOGI("MAIN", "[APP] IDF version: %s", esp_get_idf_version());
+    // 1 System Info
+    ESP_LOGI("MAIN", "System start");
+    ESP_LOGI("MAIN", "Free heap: %lu", esp_get_free_heap_size());
+    ESP_LOGI("MAIN", "IDF version: %s", esp_get_idf_version());
     //
 
-    // Always initialize the default NVS partition first
+    // 2 Always initialize the default NVS partition first
     nvs_flash_init();
 
-    // start WIFI connection
+    // 3 start WIFI connection
     connect_wifi();
 
-    // Start the system state module to manage modes and actuators
+    // 4 Init the local time
     init_time();
 
-    // Start the system state module to manage modes and actuators
+    // 5 Start the system state module to manage modes and actuators
     system_state_init();
 
-    // Start MQTT BROKER --> CORE 0
+    // 6 Start MQTT BROKER --> CORE 0
     xTaskCreatePinnedToCore(mqtt_broker_start, "MQTT BROKER TASK - CORE 0", 8192, NULL, 1, NULL, 0);
 
-    // Start MQTT PUBLISH / SUBSCRIBE
+    // 7 Start MQTT PUBLISH / SUBSCRIBE
     mqtt_pubsub_start();
 
-    // Start HTTP Server on --> CORE 1
+    // 8 Start HTTP Server on --> CORE 1
     xTaskCreatePinnedToCore(http_server_start, "HTTP SERVER TASK - CORE 1", 8192, NULL, 1, NULL, 1);
 
-    // Start the system state task for mode communication
+    // 9 Start the system state task for mode communication
     xTaskCreate(system_task, "SHVS_TASK", 4096, NULL, 3, NULL);
 }
 // ----
