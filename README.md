@@ -60,7 +60,7 @@ Open **`mqtt_pub_sub.h`** and set the IP address of your MQTT broker:
 
 ### 3 Startup order
 
-! **Web server, sensors, and actuators must only be used after the following message appears in the monitor:**
+! **Web server (SHVS_Front_End_Server), sensors, and actuators (ESP_Sensors_Actuators) must only be used after the following message appears in the monitor of the ESP_Communcation_Center project:**
 
 ```
 MQTT Connected
