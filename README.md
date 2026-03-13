@@ -76,6 +76,10 @@ This communication center is part of a larger IoT ecosystem:
 - **ESP_Communcation_Center**: Central broker for message routing and data management (this repository)
 - **Application/Front-End**: User interface for monitoring and controlling the system
 
+---
+## !! Modes info can be found in the api.md file
+
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details

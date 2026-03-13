@@ -70,6 +70,208 @@ mosquitto_pub -h <ESP32-IP> -p 1883 -u esp32 -P 1234 -t ESP32/window -m "0"
 | POST   | `/api/v1/schedule` | `{ "start": "08:00", "end": "18:00", "mode": 0 }` | Set schedule           |
 
 ---
+## System Logic Info
+
+The main system logic is implemented in:
+
+`src/system/system_state.c`
+
+This module controls the system actuators:
+
+* `window`
+* `fan`
+* `door`
+* `absorber`
+
+The logic is executed periodically inside `system_task()` (every **1 second**) using the function `system_auto_update()`.
+
+---
+
+# System Modes
+
+## MODE_MANUAL
+
+Manual mode disables all automatic decisions.
+
+Behavior:
+
+* The system **does not change any actuator state automatically**.
+* `window`, `fan`, `door`, and `absorber` must be controlled externally (for example via **MQTT** or a UI).
+* `system_auto_update()` exits immediately when this mode is active.
+
+Use case:
+
+* Manual testing
+* External control systems
+
+---
+
+## MODE_AUTO_BEST
+
+This mode prioritizes **best air quality and humidity reduction**.
+
+### Window
+
+The window opens when:
+
+* `(indoor_humidity - outdoor_humidity) > HUMIDITY_DIFF_THRESHOLD`
+* `outdoor_aq <= GOOD_AQ`
+
+Meaning:
+
+* Indoor air is more humid than outdoor air
+* Outdoor air quality is good
+
+### Fan
+
+The fan turns on when:
+
+* `window == true`
+* `indoor_aq > GOOD_AQ`
+
+Meaning:
+
+* Ventilation is needed because indoor air quality is worse than the defined threshold.
+
+### Absorber
+
+The humidity absorber is activated when:
+
+```
+indoor_humidity > HIGH_HUMIDITY
+```
+
+### Door
+
+The door state depends on wind speed:
+
+```
+door = (wind_speed > WIND_HIGH)
+```
+
+---
+
+## MODE_AUTO_ECO
+
+This mode focuses on **energy-efficient ventilation**.
+
+### Window
+
+The window opens only when:
+
+```
+outdoor_aq <= GOOD_AQ
+```
+
+If outdoor air quality is bad:
+
+```
+window = false
+fan = false
+```
+
+### Fan
+
+If the window is open and wind speed is acceptable:
+
+Fan turns on when:
+
+* `indoor_humidity > HIGH_HUMIDITY`
+* OR `indoor_temp > 25°C`
+
+If wind speed is high:
+
+```
+fan = false
+```
+
+### Absorber
+
+Activated when:
+
+```
+indoor_humidity > HIGH_HUMIDITY
+```
+
+### Door
+
+Door closes automatically when wind speed is too high:
+
+```
+door = (wind_speed > WIND_HIGH)
+```
+
+---
+
+# Safety Rule
+
+The system enforces an important constraint:
+
+```
+Fan cannot run if the window is closed
+```
+
+If this happens:
+
+```
+fan = false
+```
+
+---
+
+# Schedule System
+
+The system can use **time-based schedules**.
+
+Each schedule entry contains:
+
+* `start time`
+* `end time`
+* `mode`
+
+Example:
+
+```
+08:00 - 18:00  → MODE_AUTO_ECO
+18:00 - 23:00  → MODE_AUTO_BEST
+```
+
+Behavior:
+
+* If the current time is inside a schedule → that mode becomes active.
+* If the time is outside all schedules → all actuators are turned off.
+
+```
+window = false
+fan = false
+door = false
+absorber = false
+```
+
+Schedules support **overnight ranges**, for example:
+
+```
+22:00 - 06:00
+```
+
+---
+
+# Important Functions
+
+Main functions inside `system_state.c`:
+
+```
+system_state_init()      // Initializes mutex
+system_auto_update()     // Executes the main system logic
+system_task()            // FreeRTOS task (runs every second)
+
+apply_auto_logic()       // Implements AUTO_BEST and AUTO_ECO logic
+schedule_is_active()     // Checks if a schedule is active
+publish_state()          // Publishes state changes via MQTT
+time_to_minutes()        // Converts HH:MM to minutes
+```
+---
+
 
 # Notes
 
