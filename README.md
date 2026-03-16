@@ -77,8 +77,9 @@ This communication center is part of a larger IoT ecosystem:
 - **Application/Front-End**: User interface for monitoring and controlling the system
 
 ---
-## !! Modes info can be found in the api.md file
+## Info 
 
+Explanation for the Modes (Auto - Eco,Auto - Best, Manual) and each API functions can be found in the [api.md](/api.md) file.
 
 ## License
 
@@ -87,7 +88,7 @@ MIT License - See [LICENSE](LICENSE) for details
 
 # Reference
 
-HTTPS_SERVER: [text](https://randomnerdtutorials.com/esp32-esp8266-https-ssl-tls/) ; [text](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_https_server.html)
+HTTPS_SERVER: [ssl-tls](https://randomnerdtutorials.com/esp32-esp8266-https-ssl-tls/) ; [https-server](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_https_server.html)
 
 - Mosquitto component : [espressif](https://components.espressif.com/components/espressif/mosquitto/versions/2.0.20~4/readme)
 
