@@ -44,12 +44,116 @@ mosquitto_pub -h <ESP32-IP> -p 1883 -u esp32 -P 1234 -t ESP32/window -m "0"
 
 # HTTP API
 
-## Sensor Data
+All `GET` endpoints respond with `Content-Type: application/json`.
+
+## GET Endpoints
 
 | Method | URI               | Description                                                            |
 | ------ | ----------------- | ---------------------------------------------------------------------- |
 | GET    | `/api/v1/sensors` | Returns current sensor values (temperature, humidity, AQI, wind speed) |
-| GET    | `/api/v1/status`  | Returns actuator states (mode /  window / fan / door / absorber)                            |
+| GET    | `/api/v1/status`  | Returns actuator states (`mode`, `window`, `fan`, `door`, `absorber`) |
+| GET    | `/api/v1/schedule` | Returns the currently configured schedule periods                      |
+
+### `GET /api/v1/sensors`
+
+Returns the latest snapshot of indoor sensors, outdoor sensors, and wind speed.
+
+Example response:
+
+```json
+{
+  "indoor": {
+    "Temp": 23.50,
+    "H": 54.20,
+    "AQ": 78
+  },
+  "outdoor": {
+    "Temp": 18.40,
+    "H": 61.00,
+    "AQ": 42
+  },
+  "wind_speed": 7.3
+}
+```
+
+Field format:
+
+* `indoor.Temp`, `indoor.H`, `outdoor.Temp`, `outdoor.H`: floating-point numbers
+* `indoor.AQ`, `outdoor.AQ`: integers
+* `wind_speed`: floating-point number
+
+Important:
+
+* The JSON keys are exactly `Temp`, `H`, and `AQ` with capital letters.
+* `wind_speed` is outside the `indoor` and `outdoor` objects.
+
+### `GET /api/v1/status`
+
+Returns the current system mode and actuator states.
+
+Example response:
+
+```json
+{
+  "mode": 2,
+  "window": 1,
+  "fan": 0,
+  "door": 0,
+  "absorber": 1
+}
+```
+
+Field format:
+
+* `mode`: integer
+  * `0` = `MODE_AUTO_BEST`
+  * `1` = `MODE_AUTO_ECO`
+  * `2` = `MODE_MANUAL`
+* `window`, `fan`, `door`, `absorber`: numeric flags
+  * `1` = ON / OPEN / ACTIVE
+  * `0` = OFF / CLOSED / INACTIVE
+
+### `GET /api/v1/schedule`
+
+Returns all active schedule periods in a `periods` array.
+
+Example response:
+
+```json
+{
+  "periods": [
+    {
+      "start": "08:00",
+      "end": "18:00",
+      "mode": "0"
+    },
+    {
+      "start": "18:00",
+      "end": "23:00",
+      "mode": "1"
+    }
+  ]
+}
+```
+
+Field format:
+
+* `start`, `end`: strings in `HH:MM` format
+* `mode`: string containing the numeric mode value
+  * `"0"` = `MODE_AUTO_BEST`
+  * `"1"` = `MODE_AUTO_ECO`
+  * `"2"` = `MODE_MANUAL`
+
+Important:
+
+* In the current implementation, `mode` is returned as a string in the schedule response.
+* If no schedule is configured, the response is:
+
+```json
+{
+  "periods": []
+}
+```
 
 ---
 
@@ -66,7 +170,6 @@ mosquitto_pub -h <ESP32-IP> -p 1883 -u esp32 -P 1234 -t ESP32/window -m "0"
 
 | Method | URI                | Body                                   | Description            |
 | ------ | ------------------ | -------------------------------------- | ---------------------- |
-| GET    | `/api/v1/schedule` | –                                      | Fetch current schedule |
 | POST   | `/api/v1/schedule` | `{ "start": "08:00", "end": "18:00", "mode": 0 }` | Set schedule           |
 
 ---
@@ -279,4 +382,3 @@ time_to_minutes()        // Converts HH:MM to minutes
 * Actuator messages use simple numeric payloads (`0` and `1`).
 * HTTP POST requests require JSON bodies.
 * MQTT and HTTP can be used at the same time — they do not interfere.
-
