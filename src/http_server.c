@@ -277,8 +277,6 @@ static esp_err_t schedule_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-//
-//
 // Start HTTP server
 void http_server_start(void *pvParameters)
 {

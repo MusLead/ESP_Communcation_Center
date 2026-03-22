@@ -20,6 +20,119 @@ The ESP32 uses the following MQTT topics:
 
 ---
 
+## MQTT Communication Flow In This Repository
+
+For the sensor-to-HTTP path, this project does **not** use a traditional MQTT client subscription such as `esp_mqtt_client_subscribe()` inside the HTTP server.
+
+Instead, the communication center ESP32 runs the MQTT broker itself and registers a broker message callback that receives published sensor data.
+
+### Startup sequence and function locations
+
+1. `app_main()` starts the shared state, MQTT broker, MQTT client, HTTP server, and system task.
+   * File: `src/main.c`
+   * Functions:
+     * `system_state_init()`
+     * `mqtt_broker_start()`
+     * `mqtt_pubsub_start()`
+     * `http_server_start()`
+
+2. When `mqtt_broker_start()` is called, the broker callback is configured before the broker starts running.
+   * File: `src/mqtt_broker.c`
+   * Function: `mqtt_broker_start(void *pvParameters)`
+   * Important line of logic:
+     * `.handle_message_cb = mqtt_message_cb`
+   * After this setup, `mosq_broker_run(&config)` starts the broker loop. From that point on, every MQTT publish received by the broker can be forwarded to `mqtt_message_cb()`.
+
+3. The sensor nodes publish their measured values to MQTT topics.
+   * Indoor BME680:
+     * File: `../ESP_Sensors_Actuators/ESP_Indoor_Sensors_Actuators/src/bme680_sensor.c`
+     * Function: `bme680_read_task()`
+     * Publish call: `mqtt_publish("ESP32/indoor", msg, 1)`
+   * Outdoor BME680:
+     * File: `../ESP_Sensors_Actuators/ESP_Outdoor_Sensors_Actuators/src/bme680_sensor.c`
+     * Function: `bme680_read_task()`
+     * Publish call: `mqtt_publish("ESP32/outdoor", msg, 1)`
+   * Wind sensor:
+     * File: `../ESP_Sensors_Actuators/ESP_Outdoor_Sensors_Actuators/src/anemometer.c`
+     * Function: `anemometer_task()`
+     * Publish call: `mqtt_publish("ESP32/wind", msg, 1)`
+
+4. The broker callback `mqtt_message_cb()` collects the published sensor data.
+   * File: `src/mqtt_broker.c`
+   * Function: `mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, int retain)`
+   * Behavior:
+     * Checks which topic was published, for example `ESP32/indoor`, `ESP32/outdoor`, or `ESP32/wind`
+     * Parses the payload text with `strstr()`, `atof()`, and `atoi()`
+     * Stores the latest values in shared global state:
+       * `indoor_temp`
+       * `indoor_humidity`
+       * `indoor_aq`
+       * `outdoor_temp`
+       * `outdoor_humidity`
+       * `outdoor_aq`
+       * `wind_speed`
+   * These shared variables are declared in `include/system_state.h` and defined in `src/system_state.c`.
+
+5. The HTTP server returns the latest cached values from shared state.
+   * File: `src/http_server.c`
+   * Function: `sensors_get_handler(httpd_req_t *req)`
+   * Behavior:
+     * Locks `state_mutex`
+     * Copies the latest sensor values from shared memory
+     * Builds the JSON response
+     * Returns that JSON through `GET /api/v1/sensors`
+
+### Important clarification
+
+For sensor collection, the communication center does **not** subscribe in the traditional MQTT client sense.
+
+It works like this:
+
+* Sensor ESP32 publishes data
+* Embedded MQTT broker receives the publish
+* Broker invokes `mqtt_message_cb()`
+* Callback updates shared state
+* HTTP endpoint reads shared state and returns JSON
+
+So the data flow is:
+
+`sensor -> MQTT publish -> broker callback -> shared state -> HTTP response`
+
+### Where traditional MQTT subscribe is still used
+
+Traditional MQTT subscribe is still used in this repository for actuator control on the sensor/actuator boards:
+
+* `ESP_Indoor_Sensors_Actuators/src/mqtt_pub_sub.c`
+  * subscribes to `ESP32/window`
+  * subscribes to `ESP32/door`
+* `ESP_Outdoor_Sensors_Actuators/src/mqtt_pub_sub.c`
+  * subscribes to `ESP32/fan`
+  * subscribes to `ESP32/absorber`
+
+In other words:
+
+* Sensor data into the communication center: broker callback, not traditional client subscribe
+* Actuator commands to the remote boards: traditional MQTT subscribe
+
+### Transport note: MQTT over TCP
+
+Yes. In the current implementation this is standard MQTT over TCP.
+
+Why:
+
+* The broker runs on port `1883`
+* The configured URIs use the `mqtt://` scheme
+* There is no `ws://`, `wss://`, or `mqtts://` transport configured in the current code
+
+Relevant locations:
+
+* `include/mqtt_pub_sub.h` in this module uses `mqtt://localhost:1883`
+* The sensor nodes use `mqtt://192.168.0.130:1883`
+
+That means the current implementation is plain MQTT over TCP, without TLS, and not MQTT over WebSocket.
+
+---
+
 ## Examples
 
 ### **Subscribe to fan state**
