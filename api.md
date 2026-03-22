@@ -171,6 +171,16 @@ All `GET` endpoints respond with `Content-Type: application/json`.
 
 Returns the latest snapshot of indoor sensors, outdoor sensors, and wind speed.
 
+If a source stops publishing for longer than its timeout window, the communication center resets only that source buffer to `0` internally and returns `--` for the stale values in the HTTP response.
+
+Current timeout behavior:
+
+* Indoor BME680 data: `1000 ms`
+* Outdoor BME680 data: `1000 ms`
+* Wind data: `5000 ms`
+
+Timeouts are tracked independently, so if the indoor ESP stops publishing, only the indoor values become `--`. Outdoor and wind values remain available until their own timeout expires.
+
 Example response:
 
 ```json
@@ -191,14 +201,18 @@ Example response:
 
 Field format:
 
-* `indoor.Temp`, `indoor.H`, `outdoor.Temp`, `outdoor.H`: floating-point numbers
-* `indoor.AQ`, `outdoor.AQ`: integers
-* `wind_speed`: floating-point number
+* Fresh values:
+  * `indoor.Temp`, `indoor.H`, `outdoor.Temp`, `outdoor.H`: floating-point numbers
+  * `indoor.AQ`, `outdoor.AQ`: integers
+  * `wind_speed`: floating-point number
+* Stale values:
+  * the corresponding field is returned as the string `"--"`
 
 Important:
 
 * The JSON keys are exactly `Temp`, `H`, and `AQ` with capital letters.
 * `wind_speed` is outside the `indoor` and `outdoor` objects.
+* A timeout in one source does not clear the other source buffers.
 
 ### `GET /api/v1/status`
 

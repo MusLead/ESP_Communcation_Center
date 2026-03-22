@@ -1,8 +1,12 @@
 #include "system_state.h"
+#include <stdio.h>
 #include <time.h>
 #include <string.h>
+#include "esp_timer.h"
 #include "sntp_time.h"
 #include "mqtt_pub_sub.h"
+
+static const char *TAG = "SYSTEM_STATE";
 
 schedule_period_t schedule[MAX_PERIODS];
 uint8_t schedule_count = 0;
@@ -26,15 +30,49 @@ system_mode_t current_mode = MODE_MANUAL;
 float indoor_humidity = 0.0;
 float indoor_temp = 0.0;
 uint8_t indoor_aq = 0;
+bool indoor_data_available = false;
 
 // outdoor
 float outdoor_humidity = 0.0;
 float outdoor_temp = 0.0;
 uint8_t outdoor_aq = 0;
+bool outdoor_data_available = false;
 
 float wind_speed = 0.0;
+bool wind_data_available = false;
+
+static int64_t indoor_last_update_ms = 0;
+static int64_t outdoor_last_update_ms = 0;
+static int64_t wind_last_update_ms = 0;
 
 SemaphoreHandle_t state_mutex;
+
+static int64_t current_time_ms(void)
+{
+    return esp_timer_get_time() / 1000;
+}
+
+static void reset_indoor_sensor_state_locked(void)
+{
+    indoor_temp = 0.0f;
+    indoor_humidity = 0.0f;
+    indoor_aq = 0;
+    indoor_data_available = false;
+}
+
+static void reset_outdoor_sensor_state_locked(void)
+{
+    outdoor_temp = 0.0f;
+    outdoor_humidity = 0.0f;
+    outdoor_aq = 0;
+    outdoor_data_available = false;
+}
+
+static void reset_wind_sensor_state_locked(void)
+{
+    wind_speed = 0.0f;
+    wind_data_available = false;
+}
 
 void system_state_init()
 {
@@ -42,6 +80,80 @@ void system_state_init()
     if (state_mutex == NULL)
     {
         printf("ERROR: Failed to create STATE mutex\n");
+    }
+}
+
+void system_state_update_indoor_sensor(float temp, float humidity, uint8_t aq)
+{
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    indoor_temp = temp;
+    indoor_humidity = humidity;
+    indoor_aq = aq;
+    indoor_data_available = true;
+    indoor_last_update_ms = current_time_ms();
+    xSemaphoreGive(state_mutex);
+}
+
+void system_state_update_outdoor_sensor(float temp, float humidity, uint8_t aq)
+{
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    outdoor_temp = temp;
+    outdoor_humidity = humidity;
+    outdoor_aq = aq;
+    outdoor_data_available = true;
+    outdoor_last_update_ms = current_time_ms();
+    xSemaphoreGive(state_mutex);
+}
+
+void system_state_update_wind_speed(float speed)
+{
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    wind_speed = speed;
+    wind_data_available = true;
+    wind_last_update_ms = current_time_ms();
+    xSemaphoreGive(state_mutex);
+}
+
+void system_state_refresh_sensor_timeouts(void)
+{
+    int64_t now = current_time_ms();
+    bool indoor_timed_out = false;
+    bool outdoor_timed_out = false;
+    bool wind_timed_out = false;
+
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+
+    if (indoor_data_available && (now - indoor_last_update_ms) > INDOOR_SENSOR_TIMEOUT_MS)
+    {
+        reset_indoor_sensor_state_locked();
+        indoor_timed_out = true;
+    }
+
+    if (outdoor_data_available && (now - outdoor_last_update_ms) > OUTDOOR_SENSOR_TIMEOUT_MS)
+    {
+        reset_outdoor_sensor_state_locked();
+        outdoor_timed_out = true;
+    }
+
+    if (wind_data_available && (now - wind_last_update_ms) > WIND_SENSOR_TIMEOUT_MS)
+    {
+        reset_wind_sensor_state_locked();
+        wind_timed_out = true;
+    }
+
+    xSemaphoreGive(state_mutex);
+
+    if (indoor_timed_out)
+    {
+        ESP_LOGW(TAG, "Indoor sensor data timed out");
+    }
+    if (outdoor_timed_out)
+    {
+        ESP_LOGW(TAG, "Outdoor sensor data timed out");
+    }
+    if (wind_timed_out)
+    {
+        ESP_LOGW(TAG, "Wind sensor data timed out");
     }
 }
 
@@ -103,42 +215,40 @@ static void apply_auto_logic(system_mode_t mode)
     // ---------------- AUTO_BEST ----------------
     if (mode == MODE_AUTO_BEST)
     {
-        // Windowlogik
-        window = (indoor_humidity - outdoor_humidity > HUMIDITY_DIFF_THRESHOLD &&
-                  outdoor_aq <= GOOD_AQ); // strcmp(outdoor_aq_level,"good")==0
-        // Fanlogik
-        fan = (window && indoor_aq > GOOD_AQ);
-
-        // Absorber logic - on if either humidity is high or AQ is bad
-        absorber_used = (indoor_humidity > HIGH_HUMIDITY) || (indoor_aq > GOOD_AQ);
+        window = (indoor_data_available &&
+                  outdoor_data_available &&
+                  indoor_humidity - outdoor_humidity > HUMIDITY_DIFF_THRESHOLD &&
+                  outdoor_aq <= GOOD_AQ);
+        fan = (window && indoor_data_available && indoor_aq > GOOD_AQ);
+        absorber_used = (indoor_data_available &&
+                         (indoor_humidity > HIGH_HUMIDITY || indoor_aq > GOOD_AQ));
     }
 
     // ---------------- AUTO_ECO ----------------
     else if (mode == MODE_AUTO_ECO)
     {
-        // window: open if outdoor AQ is good
-        if (outdoor_aq <= GOOD_AQ)
+        if (outdoor_data_available && outdoor_aq <= GOOD_AQ)
         {
             window = true;
 
-            if (wind_speed > WIND_HIGH)
+            if (wind_data_available && wind_speed > WIND_HIGH)
             {
                 fan = false;
             }
             else
             {
-                fan = (indoor_humidity > HIGH_HUMIDITY || indoor_temp > 25.0) ? 1 : 0;
+                fan = (indoor_data_available &&
+                       (indoor_humidity > HIGH_HUMIDITY || indoor_temp > 25.0f)) ? 1 : 0;
             }
         }
         else
         {
-            // bad outdoor AQ -> close window and turn off fan
             window = false;
             fan = false;
         }
 
-        // Absorber logic - on if either humidity is high or AQ is bad
-        absorber_used = (indoor_humidity > HIGH_HUMIDITY) || (indoor_aq > GOOD_AQ);
+        absorber_used = (indoor_data_available &&
+                         (indoor_humidity > HIGH_HUMIDITY || indoor_aq > GOOD_AQ));
     }
 }
 
@@ -159,12 +269,11 @@ void system_auto_update()
     }
 
     // -------- SCHEDULE --------
-
     if (schedule_count > 0)
     {
         if (!schedule_is_active(&mode))
         {
-            // outside schedule → everything off
+            // outside schedule -> everything off
             window = false;
             fan = false;
             door = false;
@@ -179,12 +288,8 @@ void system_auto_update()
             publish_state(w, f, d, a);
             return;
         }
-        // Fixed: Apply scheduled mode
-        current_mode = mode;
 
-        // apply_auto_logic(mode);
-        // instead of
-        // current_mode = mode;
+        current_mode = mode;
     }
 
     // -------- AUTO LOGIC --------
@@ -197,7 +302,7 @@ void system_auto_update()
     }
 
     // ---------------- Door ----------------
-    door = (wind_speed > WIND_HIGH);
+    door = (wind_data_available && wind_speed > WIND_HIGH);
 
     w = window;
     f = fan;
@@ -214,7 +319,7 @@ void system_task(void *pvParameters)
 {
     while (1)
     {
-        //
+        system_state_refresh_sensor_timeouts();
         system_auto_update();
 
         // 1 sec delay

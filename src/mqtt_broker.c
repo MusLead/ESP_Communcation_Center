@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <string.h>
 #include "mqtt_broker.h"
 #include "mosq_broker.h"
@@ -35,11 +36,7 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
         {
             in_aq = atoi(p + 3);
         }
-        xSemaphoreTake(state_mutex, portMAX_DELAY);
-        indoor_temp = in_t;
-        indoor_humidity = in_h;
-        indoor_aq = in_aq;
-        xSemaphoreGive(state_mutex);
+        system_state_update_indoor_sensor(in_t, in_h, in_aq);
     }
     // Outdoor Sensor
     else if (strcmp(topic, "ESP32/outdoor") == 0)
@@ -57,18 +54,12 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
         {
             out_aq = atoi(p + 3);
         }
-        xSemaphoreTake(state_mutex, portMAX_DELAY);
-        outdoor_temp = out_t;
-        outdoor_humidity = out_h;
-        outdoor_aq = out_aq;
-        xSemaphoreGive(state_mutex);
+        system_state_update_outdoor_sensor(out_t, out_h, out_aq);
     }
     // Wind Speed
     else if (strcmp(topic, "ESP32/wind") == 0)
     {
-        xSemaphoreTake(state_mutex, portMAX_DELAY);
-        wind_speed = atof(payload);
-        xSemaphoreGive(state_mutex);
+        system_state_update_wind_speed(atof(payload));
     }
 }
 

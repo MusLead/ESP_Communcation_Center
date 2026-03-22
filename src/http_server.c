@@ -1,11 +1,35 @@
 #include "http_server.h"
 #include "esp_http_server.h"
+#include <inttypes.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include "mqtt_broker.h"
 #include "system_state.h"
 
 static const char *TAG = "HTTP_SERVER";
+
+static void format_json_float(char *buf, size_t buf_size, bool available, float value, int decimals)
+{
+    if (!available)
+    {
+        snprintf(buf, buf_size, "\"--\"");
+        return;
+    }
+
+    snprintf(buf, buf_size, "%.*f", decimals, value);
+}
+
+static void format_json_uint(char *buf, size_t buf_size, bool available, uint32_t value)
+{
+    if (!available)
+    {
+        snprintf(buf, buf_size, "\"--\"");
+        return;
+    }
+
+    snprintf(buf, buf_size, "%" PRIu32, value);
+}
 
 // ---------- GET HANDLERS ----------
 
@@ -15,6 +39,18 @@ static esp_err_t sensors_get_handler(httpd_req_t *req)
     float out_t = 0, out_h = 0, wi_speed = 0;
     uint8_t in_aq = 0;
     uint8_t out_aq = 0;
+    bool indoor_available = false;
+    bool outdoor_available = false;
+    bool wind_available = false;
+    char indoor_temp_json[16];
+    char indoor_humidity_json[16];
+    char indoor_aq_json[16];
+    char outdoor_temp_json[16];
+    char outdoor_humidity_json[16];
+    char outdoor_aq_json[16];
+    char wind_speed_json[16];
+
+    system_state_refresh_sensor_timeouts();
 
     xSemaphoreTake(state_mutex, portMAX_DELAY);
     in_t = indoor_temp;
@@ -24,19 +60,30 @@ static esp_err_t sensors_get_handler(httpd_req_t *req)
     out_h = outdoor_humidity;
     out_aq = outdoor_aq;
     wi_speed = wind_speed;
+    indoor_available = indoor_data_available;
+    outdoor_available = outdoor_data_available;
+    wind_available = wind_data_available;
     xSemaphoreGive(state_mutex);
+
+    format_json_float(indoor_temp_json, sizeof(indoor_temp_json), indoor_available, in_t, 2);
+    format_json_float(indoor_humidity_json, sizeof(indoor_humidity_json), indoor_available, in_h, 2);
+    format_json_uint(indoor_aq_json, sizeof(indoor_aq_json), indoor_available, in_aq);
+    format_json_float(outdoor_temp_json, sizeof(outdoor_temp_json), outdoor_available, out_t, 2);
+    format_json_float(outdoor_humidity_json, sizeof(outdoor_humidity_json), outdoor_available, out_h, 2);
+    format_json_uint(outdoor_aq_json, sizeof(outdoor_aq_json), outdoor_available, out_aq);
+    format_json_float(wind_speed_json, sizeof(wind_speed_json), wind_available, wi_speed, 1);
 
     char json_resp[256];
 
     snprintf(json_resp, sizeof(json_resp),
              "{"
-             "\"indoor\": {\"Temp\": %.2f, \"H\": %.2f, \"AQ\": %u},"
-             "\"outdoor\": {\"Temp\": %.2f, \"H\": %.2f, \"AQ\": %u},"
-             "\"wind_speed\": %.1f"
+             "\"indoor\": {\"Temp\": %s, \"H\": %s, \"AQ\": %s},"
+             "\"outdoor\": {\"Temp\": %s, \"H\": %s, \"AQ\": %s},"
+             "\"wind_speed\": %s"
              "}",
-             in_t, in_h, in_aq,
-             out_t, out_h, out_aq,
-             wi_speed);
+             indoor_temp_json, indoor_humidity_json, indoor_aq_json,
+             outdoor_temp_json, outdoor_humidity_json, outdoor_aq_json,
+             wind_speed_json);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json_resp, strlen(json_resp));
