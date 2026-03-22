@@ -318,6 +318,45 @@ static bool schedule_is_active(system_mode_t *out_mode)
     return false;
 }
 
+void system_state_get_control_flags_locked(bool *schedule_configured,
+                                           bool *schedule_active,
+                                           bool *schedule_inactive_manual_override,
+                                           bool *manual_control_allowed)
+{
+    bool has_schedule = schedule_count > 0;
+    bool active = false;
+    bool inactive_manual_override = false;
+    bool manual_allowed = current_mode == MODE_MANUAL;
+    system_mode_t scheduled_mode = current_mode;
+
+    if (!manual_allowed && has_schedule)
+    {
+        active = schedule_is_active(&scheduled_mode);
+        inactive_manual_override = !active;
+        manual_allowed = inactive_manual_override;
+    }
+
+    if (schedule_configured != NULL)
+    {
+        *schedule_configured = has_schedule;
+    }
+
+    if (schedule_active != NULL)
+    {
+        *schedule_active = active;
+    }
+
+    if (schedule_inactive_manual_override != NULL)
+    {
+        *schedule_inactive_manual_override = inactive_manual_override;
+    }
+
+    if (manual_control_allowed != NULL)
+    {
+        *manual_control_allowed = manual_allowed;
+    }
+}
+
 static void apply_auto_logic(system_mode_t mode)
 {
     // ---------------- AUTO_BEST ----------------
@@ -478,24 +517,9 @@ void system_auto_update()
     {
         if (!schedule_is_active(&mode))
         {
-            // outside schedule -> everything off
-            window = false;
-            fan = false;
-            door = false;
-            absorber_used = false;
-            system_state_set_status_explanation_locked("Schedule inactive: all actuators are off until the next scheduled period.");
-            // TODO: if the schedule is inactive, the window, fan, door and absorber should be able to be manually controlled without the schedule overriding them until the next schedule period starts. This allows the user to have manual control during off-schedule hours without losing the schedule benefits during on-schedule hours.
-            // make sure it does not overlapp with the manual status explanation above, maybe add a flag to the status explanation to indicate that the schedule is inactive and manual override is active until the next schedule period starts.
-            // this could also be done in the Front-End by showing a message that the schedule is currently inactive and manual override is active until the next schedule period starts.
-            // without setting mode to manual, the schedule will automatically take over again when the next schedule period starts, which is the desired behavior.
-            
-            w = window;
-            f = fan;
-            d = door;
-            a = absorber_used;
-
+            system_state_set_status_explanation_locked(
+                "Schedule inactive: manual override is active until the next schedule period starts.");
             xSemaphoreGive(state_mutex);
-            publish_state(w, f, d, a);
             return;
         }
 

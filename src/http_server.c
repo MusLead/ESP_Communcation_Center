@@ -136,6 +136,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 {
     int mode;
     bool w, f, d, a;
+    bool schedule_configured;
+    bool schedule_active;
+    bool schedule_inactive_manual_override;
+    bool manual_control_allowed;
     char why[STATUS_EXPLANATION_MAX_LEN];
     char why_json[256];
 
@@ -145,6 +149,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     f = fan;
     d = door;
     a = absorber_used;
+    system_state_get_control_flags_locked(&schedule_configured,
+                                          &schedule_active,
+                                          &schedule_inactive_manual_override,
+                                          &manual_control_allowed);
     xSemaphoreGive(state_mutex);
 
     system_state_get_status_explanation(why, sizeof(why));
@@ -155,7 +163,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     // system_state_set_status_explanation("...");
     // or system_state_set_status_explanationf("...", ...);
 
-    char json_resp[384];
+    char json_resp[512];
     snprintf(json_resp, sizeof(json_resp),
              "{"
              "\"mode\":%d,"
@@ -163,9 +171,22 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"fan\":%d,"
              "\"door\":%d,"
              "\"absorber\":%d,"
+             "\"scheduleConfigured\":%s,"
+             "\"scheduleActive\":%s,"
+             "\"scheduleInactiveManualOverride\":%s,"
+             "\"manualControlAllowed\":%s,"
              "\"why\":\"%s\""
              "}",
-             mode, w, f, d, a, why_json);
+             mode,
+             w,
+             f,
+             d,
+             a,
+             schedule_configured ? "true" : "false",
+             schedule_active ? "true" : "false",
+             schedule_inactive_manual_override ? "true" : "false",
+             manual_control_allowed ? "true" : "false",
+             why_json);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json_resp, strlen(json_resp));
@@ -287,13 +308,24 @@ static esp_err_t actuators_post_handler(httpd_req_t *req)
     }
 
     bool w, f, d, a;
+    bool schedule_inactive_manual_override = false;
+    bool manual_control_allowed = false;
+    bool is_manual_mode = false;
 
     xSemaphoreTake(state_mutex, portMAX_DELAY);
 
-    if (current_mode != MODE_MANUAL)
+    system_state_get_control_flags_locked(NULL,
+                                          NULL,
+                                          &schedule_inactive_manual_override,
+                                          &manual_control_allowed);
+
+    if (!manual_control_allowed)
     {
         xSemaphoreGive(state_mutex);
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "only MANUAL allowed"), ESP_FAIL;
+        return httpd_resp_send_err(req,
+                                   HTTPD_403_FORBIDDEN,
+                                   "manual control is only allowed in MANUAL mode or while the schedule is inactive"),
+               ESP_FAIL;
     }
 
     // Business rule: fan needs window open
@@ -315,8 +347,19 @@ static esp_err_t actuators_post_handler(httpd_req_t *req)
     f = fan;
     d = door;
     a = absorber_used;
+    is_manual_mode = current_mode == MODE_MANUAL;
 
     xSemaphoreGive(state_mutex);
+
+    if (is_manual_mode)
+    {
+        system_state_set_status_explanation("Manual Mode, no Status explanation!");
+    }
+    else if (schedule_inactive_manual_override)
+    {
+        system_state_set_status_explanation(
+            "Schedule inactive: manual override is active until the next schedule period starts.");
+    }
 
     ESP_LOGI("HTTP_SERVER", "Publishing actuator states via MQTT");
 

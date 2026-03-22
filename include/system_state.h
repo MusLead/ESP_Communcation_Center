@@ -81,5 +81,9 @@ void system_state_refresh_sensor_timeouts(void);
 void system_state_set_status_explanation(const char *message);
 void system_state_set_status_explanationf(const char *fmt, ...);
 void system_state_get_status_explanation(char *buf, size_t buf_size);
+void system_state_get_control_flags_locked(bool *schedule_configured,
+                                           bool *schedule_active,
+                                           bool *schedule_inactive_manual_override,
+                                           bool *manual_control_allowed);
 void system_auto_update(void);
 void system_task(void *pvParameters);
