@@ -320,20 +320,20 @@ static bool schedule_is_active(system_mode_t *out_mode)
 
 void system_state_get_control_flags_locked(bool *schedule_configured,
                                            bool *schedule_active,
-                                           bool *schedule_inactive_manual_override,
+                                           bool *schedule_holding_state,
                                            bool *manual_control_allowed)
 {
     bool has_schedule = schedule_count > 0;
     bool active = false;
-    bool inactive_manual_override = false;
+    bool holding_state = false;
     bool manual_allowed = current_mode == MODE_MANUAL;
     system_mode_t scheduled_mode = current_mode;
 
     if (!manual_allowed && has_schedule)
     {
         active = schedule_is_active(&scheduled_mode);
-        inactive_manual_override = !active;
-        manual_allowed = inactive_manual_override;
+        holding_state = !active;
+        manual_allowed = holding_state;
     }
 
     if (schedule_configured != NULL)
@@ -346,9 +346,9 @@ void system_state_get_control_flags_locked(bool *schedule_configured,
         *schedule_active = active;
     }
 
-    if (schedule_inactive_manual_override != NULL)
+    if (schedule_holding_state != NULL)
     {
-        *schedule_inactive_manual_override = inactive_manual_override;
+        *schedule_holding_state = holding_state;
     }
 
     if (manual_control_allowed != NULL)

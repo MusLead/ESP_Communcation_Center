@@ -138,7 +138,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     bool w, f, d, a;
     bool schedule_configured;
     bool schedule_active;
-    bool schedule_inactive_manual_override;
+    bool schedule_holding_state;
     bool manual_control_allowed;
     char why[STATUS_EXPLANATION_MAX_LEN];
     char why_json[256];
@@ -151,7 +151,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     a = absorber_used;
     system_state_get_control_flags_locked(&schedule_configured,
                                           &schedule_active,
-                                          &schedule_inactive_manual_override,
+                                          &schedule_holding_state,
                                           &manual_control_allowed);
     xSemaphoreGive(state_mutex);
 
@@ -173,7 +173,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"absorber\":%d,"
              "\"scheduleConfigured\":%s,"
              "\"scheduleActive\":%s,"
-             "\"scheduleInactiveManualOverride\":%s,"
+             "\"scheduleHoldingState\":%s,"
              "\"manualControlAllowed\":%s,"
              "\"why\":\"%s\""
              "}",
@@ -184,7 +184,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              a,
              schedule_configured ? "true" : "false",
              schedule_active ? "true" : "false",
-             schedule_inactive_manual_override ? "true" : "false",
+             schedule_holding_state ? "true" : "false",
              manual_control_allowed ? "true" : "false",
              why_json);
 
@@ -260,20 +260,20 @@ static esp_err_t mode_post_handler(httpd_req_t *req)
     if (new_mode < 0 || new_mode > 2)
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid mode"), ESP_FAIL;
 
+    bool has_schedule = false;
+
     xSemaphoreTake(state_mutex, portMAX_DELAY);
     current_mode = (system_mode_t)new_mode;
-
-    // IMPORTANT FIX:
-    // Reset schedule count when switching mode
-
-    schedule_count = 0;
-    // ESP_LOGI("HTTP_SERVER_MODE", "Current schedule count: %d", schedule_count);
-
+    has_schedule = schedule_count > 0;
     xSemaphoreGive(state_mutex);
 
     if (new_mode == MODE_MANUAL)
     {
         system_state_set_status_explanation("Manual Mode, no Status explanation!");
+    }
+    else if (has_schedule)
+    {
+        system_state_set_status_explanation("Stored schedule restored. Waiting for the next schedule period.");
     }
     else
     {
@@ -308,15 +308,14 @@ static esp_err_t actuators_post_handler(httpd_req_t *req)
     }
 
     bool w, f, d, a;
-    bool schedule_inactive_manual_override = false;
+    bool schedule_holding_state = false;
     bool manual_control_allowed = false;
-    bool is_manual_mode = false;
 
     xSemaphoreTake(state_mutex, portMAX_DELAY);
 
     system_state_get_control_flags_locked(NULL,
                                           NULL,
-                                          &schedule_inactive_manual_override,
+                                          &schedule_holding_state,
                                           &manual_control_allowed);
 
     if (!manual_control_allowed)
@@ -347,18 +346,17 @@ static esp_err_t actuators_post_handler(httpd_req_t *req)
     f = fan;
     d = door;
     a = absorber_used;
-    is_manual_mode = current_mode == MODE_MANUAL;
 
     xSemaphoreGive(state_mutex);
 
-    if (is_manual_mode)
-    {
-        system_state_set_status_explanation("Manual Mode, no Status explanation!");
-    }
-    else if (schedule_inactive_manual_override)
+    if (schedule_holding_state)
     {
         system_state_set_status_explanation(
             "Schedule inactive: manual override is active until the next schedule period starts.");
+    }
+    else
+    {
+        system_state_set_status_explanation("Manual Mode, no Status explanation!");
     }
 
     ESP_LOGI("HTTP_SERVER", "Publishing actuator states via MQTT");
@@ -386,6 +384,7 @@ static esp_err_t schedule_post_handler(httpd_req_t *req)
     schedule_period_t local[MAX_PERIODS];
     uint8_t local_count = 0;
     char *p = buf;
+    bool is_manual_mode = false;
 
     while ((p = strstr(p, "\"start\"")) && local_count < MAX_PERIODS)
     {
@@ -422,7 +421,21 @@ static esp_err_t schedule_post_handler(httpd_req_t *req)
     xSemaphoreTake(state_mutex, portMAX_DELAY);
     memcpy(schedule, local, sizeof(schedule_period_t) * local_count);
     schedule_count = local_count;
+    is_manual_mode = current_mode == MODE_MANUAL;
     xSemaphoreGive(state_mutex);
+
+    if (local_count == 0)
+    {
+        system_state_set_status_explanation("Schedule cleared. Automatic mode will use the selected AUTO behavior.");
+    }
+    else if (is_manual_mode)
+    {
+        system_state_set_status_explanation("Stored schedule updated. Switch back to AUTO to use it again.");
+    }
+    else
+    {
+        system_state_set_status_explanation("Stored schedule updated. Waiting for the next schedule evaluation.");
+    }
 
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
