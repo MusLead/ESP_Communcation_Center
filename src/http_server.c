@@ -31,6 +31,39 @@ static void format_json_uint(char *buf, size_t buf_size, bool available, uint32_
     snprintf(buf, buf_size, "%" PRIu32, value);
 }
 
+static void escape_json_string(char *dest, size_t dest_size, const char *src)
+{
+    size_t j = 0;
+
+    if (dest_size == 0)
+    {
+        return;
+    }
+
+    if (src == NULL)
+    {
+        dest[0] = '\0';
+        return;
+    }
+
+    for (size_t i = 0; src[i] != '\0' && j + 1 < dest_size; ++i)
+    {
+        if ((src[i] == '\\' || src[i] == '"') && j + 2 < dest_size)
+        {
+            dest[j++] = '\\';
+        }
+
+        if ((unsigned char)src[i] < 0x20)
+        {
+            continue;
+        }
+
+        dest[j++] = src[i];
+    }
+
+    dest[j] = '\0';
+}
+
 // ---------- GET HANDLERS ----------
 
 static esp_err_t sensors_get_handler(httpd_req_t *req)
@@ -103,6 +136,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 {
     int mode;
     bool w, f, d, a;
+    char why[STATUS_EXPLANATION_MAX_LEN];
+    char why_json[256];
 
     xSemaphoreTake(state_mutex, portMAX_DELAY);
     mode = current_mode;
@@ -112,16 +147,25 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     a = absorber_used;
     xSemaphoreGive(state_mutex);
 
-    char json_resp[128];
+    system_state_get_status_explanation(why, sizeof(why));
+    escape_json_string(why_json, sizeof(why_json), why);
+
+    // The explanation is stored in shared system state.
+    // Update it from the control logic with:
+    // system_state_set_status_explanation("...");
+    // or system_state_set_status_explanationf("...", ...);
+
+    char json_resp[384];
     snprintf(json_resp, sizeof(json_resp),
              "{"
              "\"mode\":%d,"
              "\"window\":%d,"
              "\"fan\":%d,"
              "\"door\":%d,"
-             "\"absorber\":%d"
+             "\"absorber\":%d,"
+             "\"why\":\"%s\""
              "}",
-             mode, w, f, d, a);
+             mode, w, f, d, a, why_json);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json_resp, strlen(json_resp));
@@ -205,6 +249,15 @@ static esp_err_t mode_post_handler(httpd_req_t *req)
     // ESP_LOGI("HTTP_SERVER_MODE", "Current schedule count: %d", schedule_count);
 
     xSemaphoreGive(state_mutex);
+
+    if (new_mode == MODE_MANUAL)
+    {
+        system_state_set_status_explanation("Manual Mode, no Status explanation!");
+    }
+    else
+    {
+        system_state_set_status_explanation("Automatic mode active. Waiting for rule evaluation.");
+    }
 
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;

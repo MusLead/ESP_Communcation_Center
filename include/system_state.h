@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_log.h"
@@ -13,6 +14,7 @@
 #define GOOD_AQ 20
 #define WIND_HIGH 5.0f
 #define MAX_PERIODS 8
+#define STATUS_EXPLANATION_MAX_LEN 192
 #define INDOOR_SENSOR_TIMEOUT_MS 1000
 #define OUTDOOR_SENSOR_TIMEOUT_MS 1000
 #define WIND_SENSOR_TIMEOUT_MS 5000
@@ -76,5 +78,8 @@ void system_state_update_indoor_sensor(float temp, float humidity, uint8_t aq);
 void system_state_update_outdoor_sensor(float temp, float humidity, uint8_t aq);
 void system_state_update_wind_speed(float speed);
 void system_state_refresh_sensor_timeouts(void);
+void system_state_set_status_explanation(const char *message);
+void system_state_set_status_explanationf(const char *fmt, ...);
+void system_state_get_status_explanation(char *buf, size_t buf_size);
 void system_auto_update(void);
 void system_task(void *pvParameters);
