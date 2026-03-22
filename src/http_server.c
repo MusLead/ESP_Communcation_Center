@@ -42,6 +42,8 @@ static esp_err_t sensors_get_handler(httpd_req_t *req)
     bool indoor_available = false;
     bool outdoor_available = false;
     bool wind_available = false;
+    bool indoor_connected = false;
+    bool outdoor_connected = false;
     char indoor_temp_json[16];
     char indoor_humidity_json[16];
     char indoor_aq_json[16];
@@ -65,6 +67,9 @@ static esp_err_t sensors_get_handler(httpd_req_t *req)
     wind_available = wind_data_available;
     xSemaphoreGive(state_mutex);
 
+    indoor_connected = indoor_available;
+    outdoor_connected = outdoor_available || wind_available;
+
     format_json_float(indoor_temp_json, sizeof(indoor_temp_json), indoor_available, in_t, 2);
     format_json_float(indoor_humidity_json, sizeof(indoor_humidity_json), indoor_available, in_h, 2);
     format_json_uint(indoor_aq_json, sizeof(indoor_aq_json), indoor_available, in_aq);
@@ -77,10 +82,13 @@ static esp_err_t sensors_get_handler(httpd_req_t *req)
 
     snprintf(json_resp, sizeof(json_resp),
              "{"
+             "\"connections\": {\"indoor\": %s, \"outdoor\": %s},"
              "\"indoor\": {\"Temp\": %s, \"H\": %s, \"AQ\": %s},"
              "\"outdoor\": {\"Temp\": %s, \"H\": %s, \"AQ\": %s},"
              "\"wind_speed\": %s"
              "}",
+             indoor_connected ? "true" : "false",
+             outdoor_connected ? "true" : "false",
              indoor_temp_json, indoor_humidity_json, indoor_aq_json,
              outdoor_temp_json, outdoor_humidity_json, outdoor_aq_json,
              wind_speed_json);

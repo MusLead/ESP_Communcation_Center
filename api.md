@@ -185,6 +185,10 @@ Example response:
 
 ```json
 {
+  "connections": {
+    "indoor": true,
+    "outdoor": true
+  },
   "indoor": {
     "Temp": 23.50,
     "H": 54.20,
@@ -207,6 +211,9 @@ Field format:
   * `wind_speed`: floating-point number
 * Stale values:
   * the corresponding field is returned as the string `"--"`
+* Connection flags:
+  * `connections.indoor`: `true` if the indoor ESP has published within the timeout window
+  * `connections.outdoor`: `true` if the outdoor ESP has published outdoor or wind data within the timeout window
 
 Important:
 
