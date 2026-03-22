@@ -109,8 +109,8 @@ static void apply_auto_logic(system_mode_t mode)
         // Fanlogik
         fan = (window && indoor_aq > GOOD_AQ);
 
-        // Absorberlogik
-        absorber_used = (indoor_humidity > HIGH_HUMIDITY);
+        // Absorber logic - on if either humidity is high or AQ is bad
+        absorber_used = (indoor_humidity > HIGH_HUMIDITY) || (indoor_aq > GOOD_AQ);
     }
 
     // ---------------- AUTO_ECO ----------------
@@ -137,7 +137,8 @@ static void apply_auto_logic(system_mode_t mode)
             fan = false;
         }
 
-        absorber_used = (indoor_humidity > HIGH_HUMIDITY);
+        // Absorber logic - on if either humidity is high or AQ is bad
+        absorber_used = (indoor_humidity > HIGH_HUMIDITY) || (indoor_aq > GOOD_AQ);
     }
 }
 
