@@ -1,0 +1,2 @@
+dependencies:
+  tny-robotics/sh1106-esp-idf: "^1.0.0"

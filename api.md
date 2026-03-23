@@ -12,8 +12,8 @@ The ESP32 uses the following MQTT topics:
 
 | Topic           | Payload Format                     | Description                                        |
 | --------------- | ---------------------------------- | -------------------------------------------------- |
-| `ESP32/indoor`  | `Temp:<float>,H=<float>%,AQ:<int>` | Indoor sensors: temperature, humidity, air quality |
-| `ESP32/outdoor` | `Temp:<float>,H=<float>%,AQ:<int>` | Outdoor sensors                                    |
+| `ESP32/indoor`  | `Temp:<float>, H=<float>, AQ:<int>, IP:<ipv4>` | Indoor sensors: temperature, humidity, air quality, and board IP |
+| `ESP32/outdoor` | `Temp:<float>, H=<float>, AQ:<int>, IP:<ipv4>` | Outdoor sensors and outdoor board IP                         |
 | `ESP32/fan`     | `0` or `1`                         | Fan state: `1` = ON, `0` = OFF                     |
 | `ESP32/window` && `ESP32/door`  | `0` or `1`                         | Window servo: `1` = 90°, `0` = 0°                  |
 | `ESP32/wind`    | `<float>`                          | Wind speed in km/h                                 |
@@ -63,13 +63,16 @@ Instead, the communication center ESP32 runs the MQTT broker itself and register
    * Behavior:
      * Checks which topic was published, for example `ESP32/indoor`, `ESP32/outdoor`, or `ESP32/wind`
      * Parses the payload text with `strstr()`, `atof()`, and `atoi()`
+     * Extracts the embedded node IP address from the same indoor/outdoor payload via `IP:<ipv4>`
      * Stores the latest values in shared global state:
        * `indoor_temp`
        * `indoor_humidity`
        * `indoor_aq`
+       * `indoor_ip_address`
        * `outdoor_temp`
        * `outdoor_humidity`
        * `outdoor_aq`
+       * `outdoor_ip_address`
        * `wind_speed`
    * These shared variables are declared in `include/system_state.h` and defined in `src/system_state.c`.
 
@@ -220,6 +223,14 @@ Important:
 * The JSON keys are exactly `Temp`, `H`, and `AQ` with capital letters.
 * `wind_speed` is outside the `indoor` and `outdoor` objects.
 * A timeout in one source does not clear the other source buffers.
+
+MQTT sensor payload examples:
+
+```text
+ESP32/indoor  -> Temp: 23.50, H=54.20, AQ: 78, IP:192.168.0.51
+ESP32/outdoor -> Temp: 18.40, H=61.00, AQ: 42, IP:192.168.0.52
+ESP32/wind    -> 7.3
+```
 
 ### `GET /api/v1/status`
 

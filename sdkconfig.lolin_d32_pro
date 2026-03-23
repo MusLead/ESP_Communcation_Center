@@ -2009,6 +2009,10 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 CONFIG_MOSQ_IS_ENABLED=y
 # CONFIG_MOSQ_ENABLE_SYS is not set
 # end of Mosquitto
+
+#
+# SH1106 ESP-IDF Driver
+#
 # end of Component config
 
 # CONFIG_IDF_EXPERIMENTAL_FEATURES is not set

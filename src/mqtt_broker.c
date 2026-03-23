@@ -9,7 +9,7 @@
 // MQTT message callback function
 void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, int retain)
 {
-    char payload[32]; // save messages here
+    char payload[96]; // save messages here, including embedded IP address
     uint8_t copy_len = (uint8_t)len < sizeof(payload) - 1 ? len : sizeof(payload) - 1;
     memcpy(payload, data, copy_len);
     payload[copy_len] = '\0';
@@ -36,6 +36,10 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
         {
             in_aq = atoi(p + 3);
         }
+        if ((p = strstr(payload, "IP:")) != NULL)
+        {
+            system_state_update_indoor_ip(p + 3);
+        }
         system_state_update_indoor_sensor(in_t, in_h, in_aq);
     }
     // Outdoor Sensor
@@ -53,6 +57,10 @@ void mqtt_message_cb(char *client, char *topic, char *data, int len, int qos, in
         if ((p = strstr(payload, "AQ:")) != NULL)
         {
             out_aq = atoi(p + 3);
+        }
+        if ((p = strstr(payload, "IP:")) != NULL)
+        {
+            system_state_update_outdoor_ip(p + 3);
         }
         system_state_update_outdoor_sensor(out_t, out_h, out_aq);
     }

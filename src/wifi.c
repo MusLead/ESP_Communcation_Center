@@ -7,10 +7,16 @@
 
 static const char *TAG = "ESP32_WIFI";
 static esp_ip4_addr_t esp_ip_addr;
+static volatile bool wifi_connected = false;
 
 esp_ip4_addr_t wifi_get_ip()
 {
     return esp_ip_addr;
+}
+
+bool wifi_is_connected(void)
+{
+    return wifi_connected;
 }
 
 // wifi event handler
@@ -19,6 +25,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     // start connecting to WIFI
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
     {
+        wifi_connected = false;
         status_led_set_wifi_connected(false);
         esp_wifi_connect();
 
@@ -27,6 +34,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
         ESP_LOGI(TAG, "WiFi disconnected, retrying...");
+        wifi_connected = false;
         status_led_set_wifi_connected(false);
         esp_wifi_connect();
 
@@ -36,6 +44,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         esp_ip_addr = event->ip_info.ip; // store IP
+        wifi_connected = true;
         status_led_set_wifi_connected(true);
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&esp_ip_addr));
     }

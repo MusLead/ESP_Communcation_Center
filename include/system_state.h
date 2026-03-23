@@ -14,6 +14,7 @@
 #define GOOD_AQ 20
 #define WIND_HIGH 5.0f
 #define MAX_PERIODS 8
+#define NODE_IP_ADDR_MAX_LEN 16
 #define STATUS_EXPLANATION_MAX_LEN 192
 #define INDOOR_SENSOR_TIMEOUT_MS 1000
 #define OUTDOOR_SENSOR_TIMEOUT_MS 1000
@@ -66,6 +67,8 @@ extern bool outdoor_data_available;
 
 extern float wind_speed;
 extern bool wind_data_available;
+extern char indoor_ip_address[NODE_IP_ADDR_MAX_LEN];
+extern char outdoor_ip_address[NODE_IP_ADDR_MAX_LEN];
 
 // mutex
 extern SemaphoreHandle_t state_mutex;
@@ -77,6 +80,8 @@ void system_state_init(void);
 void system_state_update_indoor_sensor(float temp, float humidity, uint8_t aq);
 void system_state_update_outdoor_sensor(float temp, float humidity, uint8_t aq);
 void system_state_update_wind_speed(float speed);
+void system_state_update_indoor_ip(const char *ip);
+void system_state_update_outdoor_ip(const char *ip);
 void system_state_refresh_sensor_timeouts(void);
 void system_state_set_status_headline(const char *message);
 void system_state_set_status_message(const char *headline, const char *message);

@@ -41,6 +41,8 @@ bool outdoor_data_available = false;
 
 float wind_speed = 0.0;
 bool wind_data_available = false;
+char indoor_ip_address[NODE_IP_ADDR_MAX_LEN] = "--";
+char outdoor_ip_address[NODE_IP_ADDR_MAX_LEN] = "--";
 
 static int64_t indoor_last_update_ms = 0;
 static int64_t outdoor_last_update_ms = 0;
@@ -53,6 +55,23 @@ SemaphoreHandle_t state_mutex;
 static int64_t current_time_ms(void)
 {
     return esp_timer_get_time() / 1000;
+}
+
+static void copy_node_ip_locked(char *dest, size_t dest_size, const char *ip)
+{
+    const char *safe_ip = ip;
+
+    if (dest == NULL || dest_size == 0)
+    {
+        return;
+    }
+
+    if (safe_ip == NULL || safe_ip[0] == '\0')
+    {
+        safe_ip = "--";
+    }
+
+    snprintf(dest, dest_size, "%s", safe_ip);
 }
 
 static void reset_indoor_sensor_state_locked(void)
@@ -192,6 +211,32 @@ void system_state_update_wind_speed(float speed)
     wind_speed = speed;
     wind_data_available = true;
     wind_last_update_ms = current_time_ms();
+    xSemaphoreGive(state_mutex);
+}
+
+void system_state_update_indoor_ip(const char *ip)
+{
+    if (state_mutex == NULL)
+    {
+        copy_node_ip_locked(indoor_ip_address, sizeof(indoor_ip_address), ip);
+        return;
+    }
+
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    copy_node_ip_locked(indoor_ip_address, sizeof(indoor_ip_address), ip);
+    xSemaphoreGive(state_mutex);
+}
+
+void system_state_update_outdoor_ip(const char *ip)
+{
+    if (state_mutex == NULL)
+    {
+        copy_node_ip_locked(outdoor_ip_address, sizeof(outdoor_ip_address), ip);
+        return;
+    }
+
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    copy_node_ip_locked(outdoor_ip_address, sizeof(outdoor_ip_address), ip);
     xSemaphoreGive(state_mutex);
 }
 
