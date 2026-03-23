@@ -93,11 +93,3 @@ target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")
 # Enable linker wrapping for mosquitto_unpwd_check to allow connection callback interception
 # without modifying upstream code
 target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=mosquitto_unpwd_check")
-
-# Some mosquitto source unconditionally define `_GNU_SOURCE` which collides with IDF build system
-# producing warning: "_GNU_SOURCE" redefined
-# This workarounds this issue by undefining the macro for the selected files
-set(sources_that_define_gnu_source ${m_src_dir}/loop.c ${m_src_dir}/mux_poll.c)
-foreach(offending_src ${sources_that_define_gnu_source})
-    set_source_files_properties(${offending_src} PROPERTIES COMPILE_OPTIONS "-U_GNU_SOURCE")
-endforeach()

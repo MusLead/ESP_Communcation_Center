@@ -20,7 +20,9 @@ Contributors:
 #include "config.h"
 
 #ifndef WIN32
-#  define _GNU_SOURCE
+#  ifndef _GNU_SOURCE
+#    define _GNU_SOURCE
+#  endif
 #endif
 
 #ifndef WIN32
@@ -372,5 +374,4 @@ void do_disconnect(struct mosquitto *context, int reason)
 		context__disconnect(context);
 	}
 }
-
 
