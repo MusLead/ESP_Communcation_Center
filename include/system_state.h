@@ -10,8 +10,8 @@
 /* -------------------- CONFIG CONSTANTS -------------------- */
 
 #define HUMIDITY_DIFF_THRESHOLD 10.0f
-#define HIGH_HUMIDITY 20.0f
-#define GOOD_AQ 20
+#define HIGH_HUMIDITY 50.0f
+#define GOOD_AQ 70
 #define WIND_HIGH 5.0f
 #define MAX_PERIODS 8
 #define NODE_IP_ADDR_MAX_LEN 16
