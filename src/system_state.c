@@ -45,6 +45,7 @@ bool wind_data_available = false;
 static int64_t indoor_last_update_ms = 0;
 static int64_t outdoor_last_update_ms = 0;
 static int64_t wind_last_update_ms = 0;
+static char status_headline[STATUS_EXPLANATION_MAX_LEN] = "You are in control";
 static char status_explanation[STATUS_EXPLANATION_MAX_LEN] = "Manual Mode, no Status explanation!";
 
 SemaphoreHandle_t state_mutex;
@@ -76,6 +77,18 @@ static void reset_wind_sensor_state_locked(void)
     wind_data_available = false;
 }
 
+static void system_state_set_status_headline_locked(const char *message)
+{
+    const char *safe_message = message;
+
+    if (safe_message == NULL || safe_message[0] == '\0')
+    {
+        safe_message = "System update";
+    }
+
+    snprintf(status_headline, sizeof(status_headline), "%s", safe_message);
+}
+
 static void system_state_set_status_explanation_locked(const char *message)
 {
     const char *safe_message = message;
@@ -88,9 +101,17 @@ static void system_state_set_status_explanation_locked(const char *message)
     snprintf(status_explanation, sizeof(status_explanation), "%s", safe_message);
 }
 
-static void system_state_set_status_explanationf_locked(const char *fmt, ...)
+static void system_state_set_status_message_locked(const char *headline, const char *message)
+{
+    system_state_set_status_headline_locked(headline);
+    system_state_set_status_explanation_locked(message);
+}
+
+static void system_state_set_status_messagef_locked(const char *headline, const char *fmt, ...)
 {
     va_list args;
+
+    system_state_set_status_headline_locked(headline);
 
     if (fmt == NULL || fmt[0] == '\0')
     {
@@ -139,6 +160,7 @@ void system_state_init()
         printf("ERROR: Failed to create STATE mutex\n");
     }
 
+    system_state_set_status_headline("You are in control");
     system_state_set_status_explanation("Manual Mode, no Status explanation!");
 }
 
@@ -216,6 +238,32 @@ void system_state_refresh_sensor_timeouts(void)
     }
 }
 
+void system_state_set_status_headline(const char *message)
+{
+    if (state_mutex == NULL)
+    {
+        system_state_set_status_headline_locked(message);
+        return;
+    }
+
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    system_state_set_status_headline_locked(message);
+    xSemaphoreGive(state_mutex);
+}
+
+void system_state_set_status_message(const char *headline, const char *message)
+{
+    if (state_mutex == NULL)
+    {
+        system_state_set_status_message_locked(headline, message);
+        return;
+    }
+
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    system_state_set_status_message_locked(headline, message);
+    xSemaphoreGive(state_mutex);
+}
+
 void system_state_set_status_explanation(const char *message)
 {
     if (state_mutex == NULL)
@@ -245,6 +293,24 @@ void system_state_set_status_explanationf(const char *fmt, ...)
     va_end(args);
 
     system_state_set_status_explanation(message);
+}
+
+void system_state_get_status_headline(char *buf, size_t buf_size)
+{
+    if (buf == NULL || buf_size == 0)
+    {
+        return;
+    }
+
+    if (state_mutex == NULL)
+    {
+        snprintf(buf, buf_size, "%s", status_headline);
+        return;
+    }
+
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    snprintf(buf, buf_size, "%s", status_headline);
+    xSemaphoreGive(state_mutex);
 }
 
 void system_state_get_status_explanation(char *buf, size_t buf_size)
@@ -370,7 +436,7 @@ static void apply_auto_logic(system_mode_t mode)
             window = false;
             fan = false;
             absorber_used = false;
-            system_state_set_status_explanation_locked("AUTO_BEST: waiting for indoor and outdoor sensor data.");
+            system_state_set_status_message_locked("Still thinking...", "AUTO_BEST: waiting for indoor and outdoor sensor data.");
             return;
         }
 
@@ -383,7 +449,8 @@ static void apply_auto_logic(system_mode_t mode)
 
         if (fan)
         {
-            system_state_set_status_explanationf_locked(
+            system_state_set_status_messagef_locked(
+                "Fresh up... fan On",
                 "AUTO_BEST: window open and fan on because indoor humidity %.1f is higher than outdoor humidity %.1f and indoor air quality %u is above the threshold.",
                 indoor_humidity,
                 outdoor_humidity,
@@ -391,7 +458,8 @@ static void apply_auto_logic(system_mode_t mode)
         }
         else if (window)
         {
-            system_state_set_status_explanationf_locked(
+            system_state_set_status_messagef_locked(
+                "Fresh air is coming in",
                 "AUTO_BEST: window opened because indoor humidity %.1f is higher than outdoor humidity %.1f and outdoor air quality %u is acceptable.",
                 indoor_humidity,
                 outdoor_humidity,
@@ -399,14 +467,16 @@ static void apply_auto_logic(system_mode_t mode)
         }
         else if (!outdoor_air_is_good)
         {
-            system_state_set_status_explanationf_locked(
+            system_state_set_status_messagef_locked(
+                "Oh No, outside is toxic!",
                 "AUTO_BEST: window kept closed because outdoor air quality %u is above the threshold %u.",
                 outdoor_aq,
                 GOOD_AQ);
         }
         else
         {
-            system_state_set_status_explanationf_locked(
+            system_state_set_status_messagef_locked(
+                "Waiting for a better breeze",
                 "AUTO_BEST: window kept closed because humidity difference %.1f is below the threshold %.1f.",
                 indoor_humidity - outdoor_humidity,
                 HUMIDITY_DIFF_THRESHOLD);
@@ -429,7 +499,7 @@ static void apply_auto_logic(system_mode_t mode)
             window = false;
             fan = false;
             absorber_used = false;
-            system_state_set_status_explanation_locked("AUTO_ECO: waiting for outdoor sensor data.");
+            system_state_set_status_message_locked("Looking outside...", "AUTO_ECO: waiting for outdoor sensor data.");
             return;
         }
 
@@ -440,7 +510,8 @@ static void apply_auto_logic(system_mode_t mode)
             if (wind_data_available && wind_speed > WIND_HIGH)
             {
                 fan = false;
-                system_state_set_status_explanationf_locked(
+                system_state_set_status_messagef_locked(
+                    "Saving energy, windy outside",
                     "AUTO_ECO: window open, but fan off because wind speed %.1f is above the threshold %.1f.",
                     wind_speed,
                     WIND_HIGH);
@@ -450,7 +521,8 @@ static void apply_auto_logic(system_mode_t mode)
                 if (!indoor_data_available)
                 {
                     fan = false;
-                    system_state_set_status_explanation_locked(
+                    system_state_set_status_message_locked(
+                        "One moment...",
                         "AUTO_ECO: window open, waiting for indoor sensor data before deciding on the fan.");
                 }
                 else
@@ -459,14 +531,16 @@ static void apply_auto_logic(system_mode_t mode)
 
                     if (fan)
                     {
-                        system_state_set_status_explanationf_locked(
+                        system_state_set_status_messagef_locked(
+                            "Fresh up... fan On",
                             "AUTO_ECO: window open and fan on because indoor humidity %.1f or temperature %.1f crossed the limit.",
                             indoor_humidity,
                             indoor_temp);
                     }
                     else
                     {
-                        system_state_set_status_explanation_locked(
+                        system_state_set_status_message_locked(
+                            "Saving energy",
                             "AUTO_ECO: window open and fan off because indoor climate is within the configured limits.");
                     }
                 }
@@ -476,7 +550,8 @@ static void apply_auto_logic(system_mode_t mode)
         {
             window = false;
             fan = false;
-            system_state_set_status_explanationf_locked(
+            system_state_set_status_messagef_locked(
+                "Oh No, outside is toxic!",
                 "AUTO_ECO: window kept closed because outdoor air quality %u is above the threshold %u.",
                 outdoor_aq,
                 GOOD_AQ);
@@ -507,7 +582,7 @@ void system_auto_update()
     // -------- MANUAL --------
     if (mode == MODE_MANUAL)
     {
-        system_state_set_status_explanation_locked("Manual Mode, no Status explanation!");
+        system_state_set_status_message_locked("You are in control", "Manual Mode, no Status explanation!");
         xSemaphoreGive(state_mutex);
         return;
     }
@@ -517,7 +592,8 @@ void system_auto_update()
     {
         if (!schedule_is_active(&mode))
         {
-            system_state_set_status_explanation_locked(
+            system_state_set_status_message_locked(
+                "Take over for now",
                 "Schedule inactive: manual override is active until the next schedule period starts.");
             xSemaphoreGive(state_mutex);
             return;

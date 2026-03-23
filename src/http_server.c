@@ -140,6 +140,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     bool schedule_active;
     bool schedule_holding_state;
     bool manual_control_allowed;
+    char why_headline[STATUS_EXPLANATION_MAX_LEN];
+    char why_headline_json[256];
     char why[STATUS_EXPLANATION_MAX_LEN];
     char why_json[256];
 
@@ -155,15 +157,17 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                                           &manual_control_allowed);
     xSemaphoreGive(state_mutex);
 
+    system_state_get_status_headline(why_headline, sizeof(why_headline));
     system_state_get_status_explanation(why, sizeof(why));
+    escape_json_string(why_headline_json, sizeof(why_headline_json), why_headline);
     escape_json_string(why_json, sizeof(why_json), why);
 
-    // The explanation is stored in shared system state.
-    // Update it from the control logic with:
-    // system_state_set_status_explanation("...");
-    // or system_state_set_status_explanationf("...", ...);
+    // The headline and explanation are stored in shared system state.
+    // Update them from the control logic with:
+    // system_state_set_status_message("...", "...");
+    // or the more specific headline/explanation setters.
 
-    char json_resp[512];
+    char json_resp[768];
     snprintf(json_resp, sizeof(json_resp),
              "{"
              "\"mode\":%d,"
@@ -175,6 +179,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"scheduleActive\":%s,"
              "\"scheduleHoldingState\":%s,"
              "\"manualControlAllowed\":%s,"
+             "\"whyHeadline\":\"%s\","
              "\"why\":\"%s\""
              "}",
              mode,
@@ -186,6 +191,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              schedule_active ? "true" : "false",
              schedule_holding_state ? "true" : "false",
              manual_control_allowed ? "true" : "false",
+             why_headline_json,
              why_json);
 
     httpd_resp_set_type(req, "application/json");
@@ -269,15 +275,18 @@ static esp_err_t mode_post_handler(httpd_req_t *req)
 
     if (new_mode == MODE_MANUAL)
     {
-        system_state_set_status_explanation("Manual Mode, no Status explanation!");
+        system_state_set_status_message("You are in control",
+                                        "Manual Mode, no Status explanation!");
     }
     else if (has_schedule)
     {
-        system_state_set_status_explanation("Stored schedule restored. Waiting for the next schedule period.");
+        system_state_set_status_message("Plan remembered",
+                                        "Stored schedule restored. Waiting for the next schedule period.");
     }
     else
     {
-        system_state_set_status_explanation("Automatic mode active. Waiting for rule evaluation.");
+        system_state_set_status_message("Automatic mode active",
+                                        "Automatic mode active. Waiting for rule evaluation.");
     }
 
     httpd_resp_sendstr(req, "OK");
@@ -351,12 +360,14 @@ static esp_err_t actuators_post_handler(httpd_req_t *req)
 
     if (schedule_holding_state)
     {
-        system_state_set_status_explanation(
+        system_state_set_status_message(
+            "Take over for now",
             "Schedule inactive: manual override is active until the next schedule period starts.");
     }
     else
     {
-        system_state_set_status_explanation("Manual Mode, no Status explanation!");
+        system_state_set_status_message("You are in control",
+                                        "Manual Mode, no Status explanation!");
     }
 
     ESP_LOGI("HTTP_SERVER", "Publishing actuator states via MQTT");
@@ -426,15 +437,18 @@ static esp_err_t schedule_post_handler(httpd_req_t *req)
 
     if (local_count == 0)
     {
-        system_state_set_status_explanation("Schedule cleared. Automatic mode will use the selected AUTO behavior.");
+        system_state_set_status_message("Fresh start",
+                                        "Schedule cleared. Automatic mode will use the selected AUTO behavior.");
     }
     else if (is_manual_mode)
     {
-        system_state_set_status_explanation("Stored schedule updated. Switch back to AUTO to use it again.");
+        system_state_set_status_message("Plan saved",
+                                        "Stored schedule updated. Switch back to AUTO to use it again.");
     }
     else
     {
-        system_state_set_status_explanation("Stored schedule updated. Waiting for the next schedule evaluation.");
+        system_state_set_status_message("Plan updated",
+                                        "Stored schedule updated. Waiting for the next schedule evaluation.");
     }
 
     httpd_resp_sendstr(req, "OK");

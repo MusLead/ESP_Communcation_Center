@@ -78,8 +78,11 @@ void system_state_update_indoor_sensor(float temp, float humidity, uint8_t aq);
 void system_state_update_outdoor_sensor(float temp, float humidity, uint8_t aq);
 void system_state_update_wind_speed(float speed);
 void system_state_refresh_sensor_timeouts(void);
+void system_state_set_status_headline(const char *message);
+void system_state_set_status_message(const char *headline, const char *message);
 void system_state_set_status_explanation(const char *message);
 void system_state_set_status_explanationf(const char *fmt, ...);
+void system_state_get_status_headline(char *buf, size_t buf_size);
 void system_state_get_status_explanation(char *buf, size_t buf_size);
 void system_state_get_control_flags_locked(bool *schedule_configured,
                                            bool *schedule_active,
