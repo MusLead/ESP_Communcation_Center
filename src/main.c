@@ -15,6 +15,7 @@
 #include "mqtt_broker.h"
 #include "system_state.h"
 #include "mqtt_pub_sub.h"
+#include "status_led.h"
 
 void app_main(void)
 {
@@ -27,25 +28,28 @@ void app_main(void)
     // 2 Always initialize the default NVS partition first
     nvs_flash_init();
 
-    // 3 start WIFI connection
+    // 3 Start the connection LED. The communication center only tracks Wi-Fi.
+    status_led_init(false);
+
+    // 4 start WIFI connection
     connect_wifi();
 
-    // 4 Init the local time
+    // 5 Init the local time
     init_time();
 
-    // 5 Start the system state module to manage modes and actuators
+    // 6 Start the system state module to manage modes and actuators
     system_state_init();
 
-    // 6 Start MQTT BROKER --> CORE 0
+    // 7 Start MQTT BROKER --> CORE 0
     xTaskCreatePinnedToCore(mqtt_broker_start, "MQTT BROKER TASK - CORE 0", 8192, NULL, 1, NULL, 0);
 
-    // 7 Start MQTT PUBLISH / SUBSCRIBE
+    // 8 Start MQTT PUBLISH / SUBSCRIBE
     mqtt_pubsub_start();
 
-    // 8 Start HTTP Server on --> CORE 1
+    // 9 Start HTTP Server on --> CORE 1
     xTaskCreatePinnedToCore(http_server_start, "HTTP SERVER TASK - CORE 1", 8192, NULL, 1, NULL, 1);
 
-    // 9 Start the system state task for mode communication
+    // 10 Start the system state task for mode communication
     xTaskCreate(system_task, "SHVS_TASK", 4096, NULL, 3, NULL);
 }
 // ----
