@@ -33,7 +33,7 @@ system_mode_t current_mode = MODE_MANUAL;
 float indoor_humidity = 0.0;
 float indoor_temp = 0.0;
 uint8_t indoor_aq = 0;
-bool indoor_data_available = false; // TODO: the availability depends on the time out of the ESP, right?
+bool indoor_data_available = false;
 
 // outdoor
 float outdoor_humidity = 0.0;
