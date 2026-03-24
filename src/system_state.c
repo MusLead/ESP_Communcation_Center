@@ -1,13 +1,15 @@
 #include "system_state.h"
-#include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
-#include <string.h>
 #include "esp_timer.h"
 #include "sntp_time.h"
 #include "mqtt_pub_sub.h"
-
+#include "system_status.h"
 static const char *TAG = "SYSTEM_STATE";
+
+#define AUTO_ECO_FAN_ON_TEMP_C 25.0f
+#define AUTO_ECO_FAN_OFF_TEMP_C 24.0f
+#define AUTO_ECO_FAN_HUMIDITY_RELEASE_MARGIN 3.0f
 
 schedule_period_t schedule[MAX_PERIODS];
 uint8_t schedule_count = 0;
@@ -31,7 +33,7 @@ system_mode_t current_mode = MODE_MANUAL;
 float indoor_humidity = 0.0;
 float indoor_temp = 0.0;
 uint8_t indoor_aq = 0;
-bool indoor_data_available = false;
+bool indoor_data_available = false; // TODO: the availability depends on the time out of the ESP, right?
 
 // outdoor
 float outdoor_humidity = 0.0;
@@ -47,8 +49,6 @@ char outdoor_ip_address[NODE_IP_ADDR_MAX_LEN] = "--";
 static int64_t indoor_last_update_ms = 0;
 static int64_t outdoor_last_update_ms = 0;
 static int64_t wind_last_update_ms = 0;
-static char status_headline[STATUS_EXPLANATION_MAX_LEN] = "You are in control";
-static char status_explanation[STATUS_EXPLANATION_MAX_LEN] = "Manual Mode, no Status explanation!";
 
 SemaphoreHandle_t state_mutex;
 
@@ -96,81 +96,6 @@ static void reset_wind_sensor_state_locked(void)
     wind_data_available = false;
 }
 
-static void system_state_set_status_headline_locked(const char *message)
-{
-    const char *safe_message = message;
-
-    if (safe_message == NULL || safe_message[0] == '\0')
-    {
-        safe_message = "System update";
-    }
-
-    snprintf(status_headline, sizeof(status_headline), "%s", safe_message);
-}
-
-static void system_state_set_status_explanation_locked(const char *message)
-{
-    const char *safe_message = message;
-
-    if (safe_message == NULL || safe_message[0] == '\0')
-    {
-        safe_message = "No status explanation available.";
-    }
-
-    snprintf(status_explanation, sizeof(status_explanation), "%s", safe_message);
-}
-
-static void system_state_set_status_message_locked(const char *headline, const char *message)
-{
-    system_state_set_status_headline_locked(headline);
-    system_state_set_status_explanation_locked(message);
-}
-
-static void system_state_set_status_messagef_locked(const char *headline, const char *fmt, ...)
-{
-    va_list args;
-
-    system_state_set_status_headline_locked(headline);
-
-    if (fmt == NULL || fmt[0] == '\0')
-    {
-        system_state_set_status_explanation_locked(NULL);
-        return;
-    }
-
-    va_start(args, fmt);
-    vsnprintf(status_explanation, sizeof(status_explanation), fmt, args);
-    va_end(args);
-}
-
-static void system_state_append_status_explanationf_locked(const char *fmt, ...)
-{
-    char suffix[96];
-    size_t len;
-    va_list args;
-
-    if (fmt == NULL || fmt[0] == '\0')
-    {
-        return;
-    }
-
-    va_start(args, fmt);
-    vsnprintf(suffix, sizeof(suffix), fmt, args);
-    va_end(args);
-
-    len = strlen(status_explanation);
-
-    if (len + 2 >= sizeof(status_explanation))
-    {
-        return;
-    }
-
-    snprintf(status_explanation + len,
-             sizeof(status_explanation) - len,
-             " %s",
-             suffix);
-}
-
 void system_state_init()
 {
     state_mutex = xSemaphoreCreateMutex();
@@ -179,8 +104,8 @@ void system_state_init()
         printf("ERROR: Failed to create STATE mutex\n");
     }
 
-    system_state_set_status_headline("You are in control");
-    system_state_set_status_explanation("Manual Mode, no Status explanation!");
+    system_status_init(state_mutex);
+    system_status_set_message("You are in control", "Manual Mode, no Status explanation!");
 }
 
 void system_state_update_indoor_sensor(float temp, float humidity, uint8_t aq)
@@ -281,99 +206,6 @@ void system_state_refresh_sensor_timeouts(void)
     {
         ESP_LOGW(TAG, "Wind sensor data timed out");
     }
-}
-
-void system_state_set_status_headline(const char *message)
-{
-    if (state_mutex == NULL)
-    {
-        system_state_set_status_headline_locked(message);
-        return;
-    }
-
-    xSemaphoreTake(state_mutex, portMAX_DELAY);
-    system_state_set_status_headline_locked(message);
-    xSemaphoreGive(state_mutex);
-}
-
-void system_state_set_status_message(const char *headline, const char *message)
-{
-    if (state_mutex == NULL)
-    {
-        system_state_set_status_message_locked(headline, message);
-        return;
-    }
-
-    xSemaphoreTake(state_mutex, portMAX_DELAY);
-    system_state_set_status_message_locked(headline, message);
-    xSemaphoreGive(state_mutex);
-}
-
-void system_state_set_status_explanation(const char *message)
-{
-    if (state_mutex == NULL)
-    {
-        system_state_set_status_explanation_locked(message);
-        return;
-    }
-
-    xSemaphoreTake(state_mutex, portMAX_DELAY);
-    system_state_set_status_explanation_locked(message);
-    xSemaphoreGive(state_mutex);
-}
-
-void system_state_set_status_explanationf(const char *fmt, ...)
-{
-    char message[STATUS_EXPLANATION_MAX_LEN];
-    va_list args;
-
-    if (fmt == NULL || fmt[0] == '\0')
-    {
-        system_state_set_status_explanation(NULL);
-        return;
-    }
-
-    va_start(args, fmt);
-    vsnprintf(message, sizeof(message), fmt, args);
-    va_end(args);
-
-    system_state_set_status_explanation(message);
-}
-
-void system_state_get_status_headline(char *buf, size_t buf_size)
-{
-    if (buf == NULL || buf_size == 0)
-    {
-        return;
-    }
-
-    if (state_mutex == NULL)
-    {
-        snprintf(buf, buf_size, "%s", status_headline);
-        return;
-    }
-
-    xSemaphoreTake(state_mutex, portMAX_DELAY);
-    snprintf(buf, buf_size, "%s", status_headline);
-    xSemaphoreGive(state_mutex);
-}
-
-void system_state_get_status_explanation(char *buf, size_t buf_size)
-{
-    if (buf == NULL || buf_size == 0)
-    {
-        return;
-    }
-
-    if (state_mutex == NULL)
-    {
-        snprintf(buf, buf_size, "%s", status_explanation);
-        return;
-    }
-
-    xSemaphoreTake(state_mutex, portMAX_DELAY);
-    snprintf(buf, buf_size, "%s", status_explanation);
-    xSemaphoreGive(state_mutex);
 }
 
 void publish_state(bool w, bool f, bool d, bool a)
@@ -478,10 +310,12 @@ static void apply_auto_logic(system_mode_t mode)
 
         if (!indoor_data_available || !outdoor_data_available)
         {
-            window = false;
+            // keep the last state to avoid rapid switching when data is intermittent, but set a status message to explain the situation.
+            // window = false;
+            // door = false;
             fan = false;
             absorber_used = false;
-            system_state_set_status_message_locked("Still thinking...", "AUTO_BEST: waiting for indoor and outdoor sensor data.");
+            system_status_set_message_locked("Still thinking...", "AUTO_BEST: waiting for indoor and outdoor sensor data.");
             return;
         }
 
@@ -489,38 +323,40 @@ static void apply_auto_logic(system_mode_t mode)
         outdoor_air_is_good = outdoor_aq <= GOOD_AQ;
 
         window = humidity_diff_high_enough && outdoor_air_is_good;
-        fan = (window && indoor_aq > GOOD_AQ);
+        door = window;
+        fan = window; // not dependent on wind speed, air quality and temperature
         absorber_used = (indoor_humidity > HIGH_HUMIDITY || indoor_aq > GOOD_AQ);
 
         if (fan)
         {
-            system_state_set_status_messagef_locked(
-                "Fresh up... fan On",
-                "AUTO_BEST: window open and fan on because indoor humidity %.1f is higher than outdoor humidity %.1f and indoor air quality %u is above the threshold.",
+            system_status_set_messagef_locked(
+                "Fresh up... fan On. Inside is too toxic!",
+                "AUTO_BEST: window and door open and fan on because indoor humidity %.1f is higher than outdoor humidity %.1f and indoor air quality %u is above the threshold %u.",
                 indoor_humidity,
                 outdoor_humidity,
-                indoor_aq);
+                indoor_aq,
+                GOOD_AQ);
         }
         else if (window)
         {
-            system_state_set_status_messagef_locked(
+            system_status_set_messagef_locked(
                 "Fresh air is coming in",
-                "AUTO_BEST: window opened because indoor humidity %.1f is higher than outdoor humidity %.1f and outdoor air quality %u is acceptable.",
+                "AUTO_BEST: window and door open because indoor humidity %.1f is higher than outdoor humidity %.1f and outdoor air quality %u is acceptable.",
                 indoor_humidity,
                 outdoor_humidity,
                 outdoor_aq);
         }
         else if (!outdoor_air_is_good)
         {
-            system_state_set_status_messagef_locked(
+            system_status_set_messagef_locked(
                 "Oh No, outside is toxic!",
-                "AUTO_BEST: window kept closed because outdoor air quality %u is above the threshold %u.",
+                "AUTO_BEST: window and door kept closed because outdoor air quality %u is above the threshold %u.",
                 outdoor_aq,
                 GOOD_AQ);
         }
-        else
+        else // !humidity_diff_high_enough || !outdoor_air_is_good
         {
-            system_state_set_status_messagef_locked(
+            system_status_set_messagef_locked(
                 "Waiting for a better breeze",
                 "AUTO_BEST: window kept closed because humidity difference %.1f is below the threshold %.1f.",
                 indoor_humidity - outdoor_humidity,
@@ -529,7 +365,7 @@ static void apply_auto_logic(system_mode_t mode)
 
         if (absorber_used)
         {
-            system_state_append_status_explanationf_locked(
+            system_status_append_explanationf_locked(
                 "Absorber enabled because indoor humidity %.1f or air quality %u crossed the threshold.",
                 indoor_humidity,
                 indoor_aq);
@@ -537,69 +373,106 @@ static void apply_auto_logic(system_mode_t mode)
     }
 
     // ---------------- AUTO_ECO ----------------
+    // The fan will be turned on especially when the temperature is high, to provide better comfort, even if the air quality is good. But if the wind speed is high, the fan will be turned off to save energy and avoid making too much noise, since the natural ventilation should be sufficient in that case.
     else if (mode == MODE_AUTO_ECO)
     {
+        bool humidity_diff_high_enough = false;
+
+        bool fan_should_start = false;
+        bool fan_should_keep_running = false;
+        bool fan_was_on = fan;
+
+        humidity_diff_high_enough = (indoor_humidity - outdoor_humidity) > HUMIDITY_DIFF_THRESHOLD;
+
         if (!outdoor_data_available)
         {
-            window = false;
+            // keep the last state to avoid rapid switching when data is intermittent, but set a status message to explain the situation.
+            // window = false;
+            // door = false;
             fan = false;
             absorber_used = false;
-            system_state_set_status_message_locked("Looking outside...", "AUTO_ECO: waiting for outdoor sensor data.");
+            system_status_set_message_locked("Looking outside...", "AUTO_ECO: waiting for outdoor sensor data.");
             return;
         }
 
-        if (outdoor_aq <= GOOD_AQ)
+        if (outdoor_aq <= GOOD_AQ && humidity_diff_high_enough)
+        // the door and window should be open
         {
             window = true;
+            door = true;
 
             if (wind_data_available && wind_speed > WIND_HIGH)
             {
                 fan = false;
-                system_state_set_status_messagef_locked(
+                system_status_set_messagef_locked(
                     "Saving energy, windy outside",
                     "AUTO_ECO: window open, but fan off because wind speed %.1f is above the threshold %.1f.",
                     wind_speed,
                     WIND_HIGH);
             }
-            else
+            else // wind speed is not high, decide on the fan based on indoor conditions (humidity and temperature)
             {
-                if (!indoor_data_available)
+                if (!indoor_data_available) // TIME OUT
                 {
                     fan = false;
-                    system_state_set_status_message_locked(
+                    system_status_set_message_locked(
                         "One moment...",
                         "AUTO_ECO: window open, waiting for indoor sensor data before deciding on the fan.");
                 }
                 else
                 {
-                    fan = (indoor_humidity > HIGH_HUMIDITY || indoor_temp > 25.0f) ? true : false;
+                    fan_should_start = (indoor_humidity > HIGH_HUMIDITY || indoor_temp > AUTO_ECO_FAN_ON_TEMP_C);
+                    fan_should_keep_running =
+                        fan_was_on &&
+                        (indoor_humidity > (HIGH_HUMIDITY - AUTO_ECO_FAN_HUMIDITY_RELEASE_MARGIN) ||
+                         indoor_temp > AUTO_ECO_FAN_OFF_TEMP_C);
+                    fan = fan_should_start || fan_should_keep_running;
 
                     if (fan)
                     {
-                        system_state_set_status_messagef_locked(
-                            "Fresh up... fan On",
-                            "AUTO_ECO: window open and fan on because indoor humidity %.1f or temperature %.1f crossed the limit.",
-                            indoor_humidity,
-                            indoor_temp);
+                        if (fan_should_start)
+                        {
+                            system_status_set_messagef_locked(
+                                "Fresh up... fan On",
+                                "AUTO_ECO: window open and fan on because indoor humidity %.1f or temperature %.1f crossed the limit.",
+                                indoor_humidity,
+                                indoor_temp);
+                        }
+                        else
+                        {
+                            system_status_set_messagef_locked(
+                                "Fresh up... fan On",
+                                "AUTO_ECO: window open and fan kept on while indoor humidity %.1f or temperature %.1f is still close to the limit, to avoid rapid switching.",
+                                indoor_humidity,
+                                indoor_temp);
+                        }
                     }
                     else
                     {
-                        system_state_set_status_message_locked(
+                        system_status_set_messagef_locked(
                             "Saving energy",
-                            "AUTO_ECO: window open and fan off because indoor climate is within the configured limits.");
+                            "AUTO_ECO: window open and fan off because indoor humidity %.1f and temperature %.1f are within the configured limits.",
+                            indoor_humidity,
+                            indoor_temp);
                     }
                 }
             }
         }
-        else
+        else // Air quality is not good, keep everything closed and fan off
         {
             window = false;
+            door = false;
             fan = false;
-            system_state_set_status_messagef_locked(
+            if (outdoor_aq > GOOD_AQ) system_status_set_messagef_locked(
                 "Oh No, outside is toxic!",
                 "AUTO_ECO: window kept closed because outdoor air quality %u is above the threshold %u.",
                 outdoor_aq,
                 GOOD_AQ);
+            else system_status_set_messagef_locked(
+                "Waiting for a better breeze",
+                "AUTO_ECO: window kept closed because humidity difference %.1f is below the threshold %.1f.",
+                indoor_humidity - outdoor_humidity,
+                HUMIDITY_DIFF_THRESHOLD);
         }
 
         absorber_used = (indoor_data_available &&
@@ -607,7 +480,7 @@ static void apply_auto_logic(system_mode_t mode)
 
         if (absorber_used)
         {
-            system_state_append_status_explanationf_locked(
+            system_status_append_explanationf_locked(
                 "Absorber enabled because indoor humidity %.1f or air quality %u crossed the threshold.",
                 indoor_humidity,
                 indoor_aq);
@@ -627,7 +500,7 @@ void system_auto_update()
     // -------- MANUAL --------
     if (mode == MODE_MANUAL)
     {
-        system_state_set_status_message_locked("You are in control", "Manual Mode, no Status explanation!");
+        system_status_set_message_locked("You are in control", "Manual Mode, no Status explanation!");
         xSemaphoreGive(state_mutex);
         return;
     }
@@ -637,7 +510,7 @@ void system_auto_update()
     {
         if (!schedule_is_active(&mode))
         {
-            system_state_set_status_message_locked(
+            system_status_set_message_locked(
                 "Take over for now",
                 "Schedule inactive: manual override is active until the next schedule period starts.");
             xSemaphoreGive(state_mutex);
@@ -654,17 +527,6 @@ void system_auto_update()
     if (fan && !window)
     {
         fan = false;
-    }
-
-    // ---------------- Door ----------------
-    door = (wind_data_available && wind_speed > WIND_HIGH);
-
-    if (door)
-    {
-        system_state_append_status_explanationf_locked(
-            "Door opened because wind speed %.1f is above the threshold %.1f.",
-            wind_speed,
-            WIND_HIGH);
     }
 
     w = window;
