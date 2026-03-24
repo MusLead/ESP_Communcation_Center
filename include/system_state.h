@@ -10,7 +10,7 @@
 /* -------------------- CONFIG CONSTANTS -------------------- */
 
 #define HUMIDITY_DIFF_THRESHOLD 10.0f
-#define HIGH_HUMIDITY 65.0f
+#define HIGH_HUMIDITY 55.0f
 #define LOW_HUMIDITY 10.0f
 #define GOOD_AQ 70 // For the sake of the Miniature, we consider AQI <= 70 as good air quality
 #define WIND_HIGH 5.0f
