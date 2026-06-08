@@ -68,6 +68,89 @@ MQTT Connected
 
 Only after this message the system is fully operational.
 
+## OLED Status Display
+
+The communication center can use an optional I2C OLED display to show the current system status directly on the ESP32. The display code is implemented in `src/oled_status.c` and is started from `app_main()` through `oled_status_init()`.
+
+### OLED Library
+
+The OLED is integrated with the ESP-IDF LCD framework and the external SH1106 driver component:
+
+```yaml
+dependencies:
+  tny-robotics/sh1106-esp-idf: "^1.0.0"
+```
+
+This dependency is declared in `src/idf_component.yml`. PlatformIO/ESP-IDF resolves it into `managed_components/tny-robotics__sh1106-esp-idf`.
+
+The library provides the SH1106 panel driver function:
+
+```c
+esp_lcd_new_panel_sh1106(io_handle, &panel_config, &panel_handle);
+```
+
+This project also uses ESP-IDF's built-in I2C and LCD APIs:
+
+- `driver/i2c_master.h` for creating the I2C master bus
+- `esp_lcd_io_i2c.h` for LCD communication over I2C
+- `esp_lcd_panel_ops.h` for panel reset, initialization, display on/off, and bitmap drawing
+- `esp_lcd_panel_sh1106.h` from the TNY Robotics SH1106 component
+
+### OLED Configuration
+
+The OLED settings are configured through `platformio.ini` build flags:
+
+```ini
+-DOLED_STATUS_ENABLE=1
+-DOLED_STATUS_SDA_GPIO=21
+-DOLED_STATUS_SCL_GPIO=22
+-DOLED_STATUS_I2C_ADDR=0x3C
+```
+
+Default values are also defined in `src/oled_status.c`, so the module still has fallback settings if a flag is missing:
+
+- I2C port: `0`
+- SDA GPIO: `21`
+- SCL GPIO: `22`
+- I2C address: `0x3C`
+- Pixel clock: `400 kHz`
+- Display size: `128 x 64`
+- Update interval: `1000 ms`
+
+### How The OLED Is Used
+
+The OLED module runs as its own FreeRTOS task:
+
+```c
+xTaskCreate(oled_status_task, "oled_status_task", 4096, NULL, 1, NULL);
+```
+
+During startup, `oled_hw_init()`:
+
+1. Creates the I2C master bus with `i2c_new_master_bus()`.
+2. Creates the LCD I2C IO handle with `esp_lcd_new_panel_io_i2c()`.
+3. Creates the SH1106 panel with `esp_lcd_new_panel_sh1106()`.
+4. Resets and initializes the OLED panel.
+5. Turns the OLED display on.
+
+The module then refreshes the screen once per second. It reads WiFi and system-state data, formats the status lines, draws them into a local framebuffer, and sends the framebuffer to the OLED with:
+
+```c
+esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, OLED_STATUS_WIDTH, OLED_STATUS_HEIGHT, oled_buffer);
+```
+
+The text rendering is custom and minimal. `src/oled_status.c` contains a small bitmap font table, converts characters into pixels, writes them into `oled_buffer`, and finally transfers that buffer to the SH1106 display.
+
+The displayed information includes:
+
+- WiFi connection status
+- WiFi SSID
+- Communication center IP address
+- Indoor ESP connection status and IP address
+- Outdoor ESP connection status and IP address
+
+If the OLED is not connected or initialization fails, the task logs a warning and exits. The rest of the communication center continues running normally.
+
 
 ## Architecture
 
@@ -98,3 +181,6 @@ HTTPS_SERVER: [ssl-tls](https://randomnerdtutorials.com/esp32-esp8266-https-ssl-
   - [espressif](https://docs.espressif.com/projects/esp-idf/en/v4.3.3/esp32/api-reference/protocols/mqtt.html)
   - [Medium -- introduction to mqtt](https://medium.com/@vaishalinagori112/introduction-to-mqtt-and-setting-up-a-lab-for-mqtt-pentesting-on-macos-f6018183c2b7)
   - [developer -- espressif](https://developer.espressif.com/blog/2025/05/esp-idf-mosquitto-port/)
+
+- OLED SH1106 component: [TNY Robotics sh1106-esp-idf](https://github.com/TNY-Robotics/sh1106-esp-idf)
+- ESP-IDF LCD API: [Espressif LCD Peripheral API](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/peripherals/lcd/index.html)
